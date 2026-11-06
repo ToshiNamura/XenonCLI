@@ -1,0 +1,29 @@
+#pragma once
+
+#include <string>
+#include <vector>
+
+namespace xenon
+{
+
+/// The source-level header of a Xenon module (a `.ixx` interface unit).
+///
+/// The file layout is:
+///   export module Name;      // module declaration (required, first statement)
+///   import Dependency;       // module dependencies (C#-style `import`)
+///   #include <header>        // host includes
+///   ...body...               // code; `export` marks visible declarations
+struct ModuleHeader
+{
+    std::string name;                  ///< Module name from `export module Name;`.
+    std::vector<std::string> imports;  ///< Imported module dependencies, in order.
+    std::vector<std::string> includes; ///< Host `#include` directives, in order.
+    std::size_t body_offset = 0;       ///< Byte offset where the module body begins.
+
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return name.empty();
+    }
+};
+
+} // namespace xenon
