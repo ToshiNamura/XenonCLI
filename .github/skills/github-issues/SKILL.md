@@ -71,8 +71,12 @@ gh issue list --repo ToshiNamura/XenonCLI --state open
 # view one issue
 gh issue view 12 --repo ToshiNamura/XenonCLI
 
-# create
-gh issue create --repo ToshiNamura/XenonCLI --title "Title" --body "Description"
+# create (always add at least one label)
+gh issue create --repo ToshiNamura/XenonCLI --title "Title" --body "Description" --label bug
+
+# manage labels
+gh label list --repo ToshiNamura/XenonCLI
+gh label create bug --repo ToshiNamura/XenonCLI --description "Something is broken"
 
 # comment
 gh issue comment 12 --repo ToshiNamura/XenonCLI --body "Comment text"
@@ -102,8 +106,8 @@ curl.exe $h 'https://api.github.com/repos/ToshiNamura/XenonCLI/issues?state=open
 # view one issue
 curl.exe $h 'https://api.github.com/repos/ToshiNamura/XenonCLI/issues/12'
 
-# create an issue (body in body.json)
-# body.json: { "title": "...", "body": "..." }
+# create an issue (body in body.json, always include labels)
+# body.json: { "title": "...", "body": "...", "labels": ["bug"] }
 curl.exe -X POST $h -H 'Content-Type: application/json' --data '@body.json' 'https://api.github.com/repos/ToshiNamura/XenonCLI/issues'
 
 # comment
@@ -120,6 +124,13 @@ curl.exe $h 'https://api.github.com/search/issues?q=repo:ToshiNamura/XenonCLI+bu
 
 - Before creating an issue, confirm the title and description with the user if
   they were not provided explicitly.
+- **Always add labels** when creating an issue (and when updating, if useful).
+  Use the label convention below; create the label first if it is missing:
+  - `bug` — something is broken or does not work
+  - `feature` — new functionality
+  - `enhancement` — improvement of existing behavior
+  - `docs` — documentation
+  - `roadmap` — item from ROADMAP.md
 - Use Markdown for the issue body; include code snippets in fenced blocks.
 - When replying to an issue, be concise; match the language used in the issue.
 - Never print token values in chat; tokens are secrets handled only by the user.
