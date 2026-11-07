@@ -43,6 +43,7 @@ class CodeGenerator
 
     void compileFunction(const FunctionDecl& function, Module& out, const std::string& qualifiedName = {});
     void compileTypeDecl(const TypeDecl& decl, Module& out);
+    void compileGlobalVar(const GlobalVarDecl& global, Module& out);
     void compileStatement(const Stmt& stmt);
     void compileBlock(const BlockStmt& block);
     void compileExpression(const Expr& expr);
@@ -51,6 +52,9 @@ class CodeGenerator
     void leaveScope();
     void declareLocal(const std::string& name, const std::string& type = {});
     [[nodiscard]] std::size_t resolveLocal(const std::string& name);
+    [[nodiscard]] bool hasLocal(const std::string& name) const;
+    [[nodiscard]] std::size_t resolveGlobal(const std::string& name);
+    [[nodiscard]] Value evaluateConstant(const Expr* init);
     [[nodiscard]] std::string localType(const std::string& name);
     [[nodiscard]] std::size_t resolveField(const Expr& object, const std::string& fieldName);
 
@@ -97,6 +101,7 @@ class CodeGenerator
     };
 
     std::unordered_map<std::string, std::size_t> _functionIndices;
+    std::unordered_map<std::string, std::size_t> _globalIndices;
     std::unordered_map<std::string, std::vector<std::string>> _typeFields;
     std::unordered_map<std::string, FunctionTemplate> _functionTemplates;
     std::unordered_map<std::string, TypeTemplate> _typeTemplates;

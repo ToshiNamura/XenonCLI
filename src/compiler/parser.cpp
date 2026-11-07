@@ -133,9 +133,41 @@ void Parser::parseProgram(Program& out)
         }
         else
         {
-            out.Functions.push_back(parseFunction());
+            parseTopLevelDeclaration(out);
         }
     }
+}
+
+void Parser::parseTopLevelDeclaration(Program& out)
+{
+    const bool exported = matchKeyword("export");
+    const bool constant = matchKeyword("const");
+
+    const std::string type = parseType();
+    const std::string name =
+        std::string(consume(TokenType::Identifier, "expected a declaration name").Lexeme);
+
+    if (match(TokenType::LeftParen))
+    {
+        FunctionDecl function;
+        function.Exported = exported;
+        function.ReturnType = type;
+        function.Name = name;
+        parseFunctionRest(function);
+        out.Functions.push_back(std::move(function));
+        return;
+    }
+
+    GlobalVarDecl global;
+    global.Type = type;
+    global.Name = name;
+    global.Constant = constant;
+    if (match(TokenType::Assign))
+    {
+        global.Init = parseExpression();
+    }
+    consume(TokenType::Semicolon, "expected ';' after global variable declaration");
+    out.Globals.push_back(std::move(global));
 }
 
 TemplateDecl Parser::parseTemplate()
@@ -197,7 +229,12 @@ FunctionDecl Parser::parseFunction()
     function.Name = std::string(consume(TokenType::Identifier, "expected a function name").Lexeme);
 
     consume(TokenType::LeftParen, "expected '(' after function name");
+    parseFunctionRest(function);
+    return function;
+}
 
+void Parser::parseFunctionRest(FunctionDecl& function)
+{
     if (!check(TokenType::RightParen))
     {
         do
@@ -221,7 +258,6 @@ FunctionDecl Parser::parseFunction()
         function.HasBody = false;
         consume(TokenType::Semicolon, "expected '{' or ';' after function signature");
     }
-    return function;
 }
 
 TypeDecl Parser::parseTypeDecl()

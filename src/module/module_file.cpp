@@ -17,7 +17,7 @@ namespace
 {
 
 constexpr char Magic[4] = {'X', 'E', 'N', 'M'};
-constexpr std::uint32_t Version = 3;
+constexpr std::uint32_t Version = 4;
 
 constexpr std::uint32_t MaxCount = 1u << 22;
 
@@ -284,6 +284,7 @@ void writeModuleFile(std::ostream& os, const Module& module)
         {
             writeString(os, enumerator);
         }
+        writeValue(os, symbol.InitialValue);
     }
 }
 
@@ -354,6 +355,8 @@ void readModuleFile(std::istream& is, Module& out)
         {
             symbol.Enumerators.emplace_back(readString(is));
         }
+
+        symbol.InitialValue = readValue(is);
 
         out.Symbols.push_back(std::move(symbol));
     }

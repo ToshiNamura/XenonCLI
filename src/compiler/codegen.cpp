@@ -112,6 +112,11 @@ CodeGenerator::CodeGenerator(const Program& program, const Module& hints, bool h
             _typeTemplates[templ.Type.Name] = TypeTemplate{templ.Params, &templ.Type};
         }
     }
+    std::size_t globalIndex = 0;
+    for (const auto& global : _program.Globals)
+    {
+        _globalIndices[global.Name] = globalIndex++;
+    }
 }
 
 [[noreturn]] void CodeGenerator::fail(const std::string& message)
@@ -127,6 +132,10 @@ bool CodeGenerator::generate(Module& out)
 
     try
     {
+        for (const auto& global : _program.Globals)
+        {
+            compileGlobalVar(global, out);
+        }
         for (const auto& function : _program.Functions)
         {
             compileFunction(function, out);
@@ -248,6 +257,52 @@ void CodeGenerator::compileTypeDecl(const TypeDecl& decl, Module& out)
     }
 }
 
+void CodeGenerator::compileGlobalVar(const GlobalVarDecl& global, Module& out)
+{
+    Symbol symbol;
+    symbol.Name = global.Name;
+    symbol.Kind = SymbolKind::Variable;
+    symbol.Signature = global.Type + " " + global.Name;
+    symbol.Defined = true;
+    symbol.InitialValue = evaluateConstant(global.Init.get());
+    out.Symbols.push_back(std::move(symbol));
+}
+
+Value CodeGenerator::evaluateConstant(const Expr* init)
+{
+    if (init == nullptr)
+    {
+        return Null{};
+    }
+    if (const auto* number = dynamic_cast<const NumberExpr*>(init))
+    {
+        return Value{number->Value};
+    }
+    if (const auto* boolean = dynamic_cast<const BoolExpr*>(init))
+    {
+        return Value{boolean->Value};
+    }
+    if (dynamic_cast<const NullExpr*>(init) != nullptr)
+    {
+        return Null{};
+    }
+    if (dynamic_cast<const StringExpr*>(init) != nullptr)
+    {
+        fail("global string variables are not supported yet");
+    }
+    if (const auto* unary = dynamic_cast<const UnaryExpr*>(init))
+    {
+        if (unary->Operation == UnaryExpr::Op::Negate)
+        {
+            if (const auto* number = dynamic_cast<const NumberExpr*>(unary->Operand.get()))
+            {
+                return Value{-number->Value};
+            }
+        }
+    }
+    fail("global initializer must be a constant expression");
+}
+
 void CodeGenerator::enterScope()
 {
     _scopes.push_back(Scope{{}, {}, _slotCounter});
@@ -281,6 +336,28 @@ std::size_t CodeGenerator::resolveLocal(const std::string& name)
         }
     }
     fail("undefined variable: " + name);
+}
+
+bool CodeGenerator::hasLocal(const std::string& name) const
+{
+    for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it)
+    {
+        if (it->Names.find(name) != it->Names.end())
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::size_t CodeGenerator::resolveGlobal(const std::string& name)
+{
+    const auto it = _globalIndices.find(name);
+    if (it == _globalIndices.end())
+    {
+        fail("undefined variable: " + name);
+    }
+    return it->second;
 }
 
 std::string CodeGenerator::localType(const std::string& name)
@@ -563,8 +640,16 @@ void CodeGenerator::compileExpression(const Expr& expr)
     }
     if (const auto* v = dynamic_cast<const VariableExpr*>(&expr))
     {
-        emitOpcode(OpCode::LoadLocal);
-        emitByte(static_cast<std::uint8_t>(resolveLocal(v->Name)));
+        if (hasLocal(v->Name))
+        {
+            emitOpcode(OpCode::LoadLocal);
+            emitByte(static_cast<std::uint8_t>(resolveLocal(v->Name)));
+        }
+        else
+        {
+            emitOpcode(OpCode::LoadGlobal);
+            emitByte(static_cast<std::uint8_t>(resolveGlobal(v->Name)));
+        }
         return;
     }
     if (const auto* u = dynamic_cast<const UnaryExpr*>(&expr))
@@ -576,11 +661,19 @@ void CodeGenerator::compileExpression(const Expr& expr)
     if (const auto* a = dynamic_cast<const AssignExpr*>(&expr))
     {
         compileExpression(*a->Value);
-        const auto slot = resolveLocal(a->Name);
-        emitOpcode(OpCode::StoreLocal);
-        emitByte(static_cast<std::uint8_t>(slot));
-        emitOpcode(OpCode::LoadLocal);
-        emitByte(static_cast<std::uint8_t>(slot));
+        if (hasLocal(a->Name))
+        {
+            const auto slot = resolveLocal(a->Name);
+            emitOpcode(OpCode::StoreLocal);
+            emitByte(static_cast<std::uint8_t>(slot));
+            emitOpcode(OpCode::LoadLocal);
+            emitByte(static_cast<std::uint8_t>(slot));
+        }
+        else
+        {
+            emitOpcode(OpCode::StoreGlobal);
+            emitByte(static_cast<std::uint8_t>(resolveGlobal(a->Name)));
+        }
         return;
     }
     if (const auto* c = dynamic_cast<const CallExpr*>(&expr))

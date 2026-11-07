@@ -22,6 +22,8 @@ std::size_t operandSize(OpCode op)
     case OpCode::New:
     case OpCode::GetField:
     case OpCode::SetField:
+    case OpCode::LoadGlobal:
+    case OpCode::StoreGlobal:
     case OpCode::LoadLocal:
     case OpCode::StoreLocal:
     case OpCode::Call:

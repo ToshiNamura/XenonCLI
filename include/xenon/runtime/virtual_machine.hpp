@@ -82,12 +82,14 @@ class VirtualMachine
     };
 
     void rebuildFunctionTable();
+    void rebuildGlobals();
     void call(const Symbol& symbol, VirtualStack& stack);
     void callExternal(const Symbol& symbol, VirtualStack& stack);
     void execute(VirtualStack& stack);
 
     std::vector<Symbol> _symbols;
     std::vector<const Symbol*> _functions;
+    std::vector<Value> _globals;
     std::unordered_map<std::string, NativeFunction> _natives;
     std::vector<Frame> _frames;
     VirtualHeap* _heap = nullptr;

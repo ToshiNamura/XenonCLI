@@ -13,6 +13,8 @@ enum class OpCode : std::uint8_t
     New,          ///< Allocate an object of the type named in the string pool (1-byte operand).
     GetField,     ///< Pop an object, push its field (1-byte field-index operand).
     SetField,     ///< Pop a value and an object, set the field, push the value back (1-byte operand).
+    LoadGlobal,   ///< Push a global variable (1-byte global-index operand).
+    StoreGlobal,  ///< Pop a value, store it to a global, push it back (1-byte global-index operand).
     LoadLocal,    ///< Push a local variable (1-byte slot operand).
     StoreLocal,   ///< Pop into a local variable (1-byte slot operand).
     Pop,          ///< Discard the top of the stack.

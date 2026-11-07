@@ -272,6 +272,40 @@ double main()
     check(number != nullptr && std::abs(*number - 12.0) < 1e-12, "main() result wrong");
 }
 
+void testGlobals()
+{
+    using namespace xenon;
+
+    const std::string source = R"(
+export module Globals;
+
+int counter = 0;
+const double pi = 3.0;
+
+double apply(double x)
+{
+    counter = counter + 1;
+    return x * pi;
+}
+
+double main()
+{
+    double a = apply(2.0);
+    double b = apply(4.0);
+    return a + b + counter;
+}
+)";
+
+    const auto module = compileOrFail(source, "globals");
+
+    Runtime runtime;
+    runtime.addModule(module);
+    check(runtime.run("main") == InterpretResult::Ok, "run('main') failed");
+
+    const auto* number = std::get_if<double>(&runtime.lastValue());
+    check(number != nullptr && std::abs(*number - 20.0) < 1e-12, "main() result wrong");
+}
+
 void testParseError()
 {
     using namespace xenon;
@@ -302,6 +336,7 @@ int main()
         testStringLiteral();
         testClassesAndFields();
         testTemplates();
+        testGlobals();
         testParseError();
     }
     catch (const std::exception& error)

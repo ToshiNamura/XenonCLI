@@ -40,8 +40,10 @@ class Parser
     bool isType(const Token& token) const;
 
     void parseProgram(Program& out);
+    void parseTopLevelDeclaration(Program& out);
     TemplateDecl parseTemplate();
     FunctionDecl parseFunction();
+    void parseFunctionRest(FunctionDecl& function);
     TypeDecl parseTypeDecl();
     std::string parseType();
     std::unique_ptr<BlockStmt> parseBlock();

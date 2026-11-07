@@ -158,6 +158,14 @@ struct FunctionDecl
     bool HasBody = true;
 };
 
+struct GlobalVarDecl
+{
+    std::string Type;
+    std::string Name;
+    std::unique_ptr<Expr> Init; // may be null
+    bool Constant = false;
+};
+
 /// Kind of a declaration-only type (from `.hint` files or forward declarations).
 enum class DeclKind
 {
@@ -196,6 +204,7 @@ struct Program
     std::vector<FunctionDecl> Functions;
     std::vector<TypeDecl> TypeDecls;
     std::vector<TemplateDecl> Templates;
+    std::vector<GlobalVarDecl> Globals;
 };
 
 } // namespace xenon

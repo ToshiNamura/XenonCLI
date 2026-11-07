@@ -73,6 +73,7 @@ void VirtualMachine::load(const Module& module)
 {
     _symbols = module.Symbols;
     rebuildFunctionTable();
+    rebuildGlobals();
 }
 
 void VirtualMachine::loadAll(const std::vector<Module>& modules)
@@ -83,6 +84,19 @@ void VirtualMachine::loadAll(const std::vector<Module>& modules)
         _symbols.insert(_symbols.end(), module.Symbols.begin(), module.Symbols.end());
     }
     rebuildFunctionTable();
+    rebuildGlobals();
+}
+
+void VirtualMachine::rebuildGlobals()
+{
+    _globals.clear();
+    for (const auto& symbol : _symbols)
+    {
+        if (symbol.Kind == SymbolKind::Variable)
+        {
+            _globals.push_back(symbol.InitialValue);
+        }
+    }
 }
 
 void VirtualMachine::rebuildFunctionTable()
@@ -340,6 +354,30 @@ void VirtualMachine::execute(VirtualStack& stack)
                 throw RuntimeError("field index out of range");
             }
             object->Fields[classSymbol->Fields[index]] = value;
+            push(value);
+            break;
+        }
+
+        case OpCode::LoadGlobal:
+        {
+            const auto index = readByte();
+            if (index >= _globals.size())
+            {
+                throw RuntimeError("global index out of range");
+            }
+            push(_globals[index]);
+            break;
+        }
+
+        case OpCode::StoreGlobal:
+        {
+            const auto index = readByte();
+            if (index >= _globals.size())
+            {
+                throw RuntimeError("global index out of range");
+            }
+            const Value value = pop();
+            _globals[index] = value;
             push(value);
             break;
         }
