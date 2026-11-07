@@ -146,6 +146,40 @@ struct WhileStmt : Stmt
     std::unique_ptr<Stmt> Body;
 };
 
+struct DoWhileStmt : Stmt
+{
+    std::unique_ptr<Expr> Condition;
+    std::unique_ptr<Stmt> Body;
+};
+
+struct ForStmt : Stmt
+{
+    std::unique_ptr<Stmt> Init;      // may be null
+    std::unique_ptr<Expr> Condition; // may be null
+    std::unique_ptr<Expr> Increment; // may be null
+    std::unique_ptr<Stmt> Body;
+};
+
+struct BreakStmt : Stmt
+{
+};
+
+struct ContinueStmt : Stmt
+{
+};
+
+struct CaseClause
+{
+    std::unique_ptr<Expr> Value; // null = default
+    std::vector<std::unique_ptr<Stmt>> Statements;
+};
+
+struct SwitchStmt : Stmt
+{
+    std::unique_ptr<Expr> Condition;
+    std::vector<CaseClause> Cases;
+};
+
 // ---- top-level ----
 
 struct FunctionDecl

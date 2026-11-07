@@ -1,8 +1,5 @@
-<div align="center">
-
-**⚠️ ВНИМАНИЕ:** 🤖 Проект разработан с использованием ИИ-ассистента **DeepSeek** (DeepSeek V4 Pro).
-
-</div>
+> [!WARNING]
+> 🤖 Проект разработан с использованием ИИ-ассистента **DeepSeek** (DeepSeek V4 Pro).
 
 # XenonCLI
 

@@ -444,6 +444,37 @@ std::unique_ptr<Stmt> Parser::parseStatement()
         return stmt;
     }
 
+    if (matchKeyword("for"))
+    {
+        return parseForStatement();
+    }
+
+    if (matchKeyword("do"))
+    {
+        return parseDoWhileStatement();
+    }
+
+    if (matchKeyword("switch"))
+    {
+        return parseSwitchStatement();
+    }
+
+    if (matchKeyword("break"))
+    {
+        auto stmt = std::make_unique<BreakStmt>();
+        stmt->Line = _previous.Line;
+        consume(TokenType::Semicolon, "expected ';' after 'break'");
+        return stmt;
+    }
+
+    if (matchKeyword("continue"))
+    {
+        auto stmt = std::make_unique<ContinueStmt>();
+        stmt->Line = _previous.Line;
+        consume(TokenType::Semicolon, "expected ';' after 'continue'");
+        return stmt;
+    }
+
     if (isType(_current))
     {
         return parseVarDecl();
@@ -473,6 +504,107 @@ std::unique_ptr<Stmt> Parser::parseVarDecl()
         stmt->Init = parseExpression();
     }
     consume(TokenType::Semicolon, "expected ';' after variable declaration");
+    return stmt;
+}
+
+std::unique_ptr<Stmt> Parser::parseForStatement()
+{
+    auto stmt = std::make_unique<ForStmt>();
+    stmt->Line = _previous.Line;
+
+    consume(TokenType::LeftParen, "expected '(' after 'for'");
+
+    if (!check(TokenType::Semicolon))
+    {
+        if (isType(_current))
+        {
+            stmt->Init = parseVarDecl();
+        }
+        else
+        {
+            auto expr = std::make_unique<ExprStmt>();
+            expr->Expr = parseExpression();
+            consume(TokenType::Semicolon, "expected ';' after for initializer");
+            stmt->Init = std::move(expr);
+        }
+    }
+    else
+    {
+        advance(); // consume ';'
+    }
+
+    if (!check(TokenType::Semicolon))
+    {
+        stmt->Condition = parseExpression();
+    }
+    consume(TokenType::Semicolon, "expected ';' after for condition");
+
+    if (!check(TokenType::RightParen))
+    {
+        stmt->Increment = parseExpression();
+    }
+    consume(TokenType::RightParen, "expected ')' after for clauses");
+
+    stmt->Body = parseStatement();
+    return stmt;
+}
+
+std::unique_ptr<Stmt> Parser::parseDoWhileStatement()
+{
+    auto stmt = std::make_unique<DoWhileStmt>();
+    stmt->Line = _previous.Line;
+
+    stmt->Body = parseStatement();
+
+    if (!matchKeyword("while"))
+    {
+        fail("expected 'while' after do body");
+    }
+    consume(TokenType::LeftParen, "expected '(' after 'while'");
+    stmt->Condition = parseExpression();
+    consume(TokenType::RightParen, "expected ')' after condition");
+    consume(TokenType::Semicolon, "expected ';' after do/while");
+    return stmt;
+}
+
+std::unique_ptr<Stmt> Parser::parseSwitchStatement()
+{
+    auto stmt = std::make_unique<SwitchStmt>();
+    stmt->Line = _previous.Line;
+
+    consume(TokenType::LeftParen, "expected '(' after 'switch'");
+    stmt->Condition = parseExpression();
+    consume(TokenType::RightParen, "expected ')' after switch condition");
+
+    consume(TokenType::LeftBrace, "expected '{' after switch");
+
+    CaseClause* current = nullptr;
+    while (!check(TokenType::RightBrace) && !check(TokenType::End))
+    {
+        if (matchKeyword("case"))
+        {
+            stmt->Cases.push_back(CaseClause{});
+            current = &stmt->Cases.back();
+            current->Value = parseExpression();
+            consume(TokenType::Colon, "expected ':' after case value");
+        }
+        else if (matchKeyword("default"))
+        {
+            stmt->Cases.push_back(CaseClause{});
+            current = &stmt->Cases.back();
+            consume(TokenType::Colon, "expected ':' after 'default'");
+        }
+        else
+        {
+            if (current == nullptr)
+            {
+                fail("statement outside of a case");
+            }
+            current->Statements.push_back(parseStatement());
+        }
+    }
+
+    consume(TokenType::RightBrace, "expected '}' after switch");
     return stmt;
 }
 

@@ -109,6 +109,91 @@ double classify(double x)
     check(cls != nullptr && std::abs(*cls + 1.0) < 1e-12, "classify(-5) wrong");
 }
 
+void testControlFlow()
+{
+    using namespace xenon;
+
+    const std::string source = R"(
+export module Flow;
+
+double for_sum()
+{
+    double total = 0.0;
+    for (double i = 1.0; i <= 10.0; i = i + 1.0)
+    {
+        total = total + i;
+    }
+    return total;
+}
+
+double do_while()
+{
+    double n = 0.0;
+    do
+    {
+        n = n + 1.0;
+    }
+    while (n < 5.0);
+    return n;
+}
+
+double with_continue()
+{
+    double total = 0.0;
+    for (double i = 1.0; i <= 5.0; i = i + 1.0)
+    {
+        if (i == 3.0)
+        {
+            continue;
+        }
+        total = total + i;
+    }
+    return total;
+}
+
+double with_break()
+{
+    double total = 0.0;
+    for (double i = 1.0; true; i = i + 1.0)
+    {
+        if (i > 5.0)
+        {
+            break;
+        }
+        total = total + i;
+    }
+    return total;
+}
+
+double switch_test(double x)
+{
+    switch (x)
+    {
+        case 1.0:
+            return 10.0;
+        case 2.0:
+            return 20.0;
+        default:
+            return 99.0;
+    }
+}
+
+double main()
+{
+    return for_sum() + do_while() + with_continue() + with_break() + switch_test(2.0);
+}
+)";
+
+    const auto module = compileOrFail(source, "control flow statements");
+
+    Runtime runtime;
+    runtime.addModule(module);
+    check(runtime.run("main") == InterpretResult::Ok, "run('main') failed");
+
+    const auto* number = std::get_if<double>(&runtime.lastValue());
+    check(number != nullptr && std::abs(*number - 107.0) < 1e-12, "main() result wrong");
+}
+
 void testBooleanLogic()
 {
     using namespace xenon;
@@ -332,6 +417,7 @@ int main()
     {
         testFunctionCall();
         testLocalsAndControlFlow();
+        testControlFlow();
         testBooleanLogic();
         testStringLiteral();
         testClassesAndFields();

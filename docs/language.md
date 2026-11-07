@@ -69,6 +69,22 @@ x = x + 2.0;                       // присваивание
 if (x > 2.0) { /* ... */ }
 else { /* ... */ }
 while (x < 10.0) { /* ... */ }
+
+do { /* ... */ } while (x < 10.0);
+
+for (double i = 0.0; i < 10.0; i = i + 1.0) { /* ... */ }
+
+break;
+continue;
+
+switch (x)
+{
+    case 1.0:
+        /* ... */
+    default:
+        /* ... */
+}
+
 return x;
 ```
 

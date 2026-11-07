@@ -34,6 +34,7 @@ enum class TokenType
     OrOr,         // ||
     Dot,          // .
     ColonColon,   // ::
+    Colon,        // :
 };
 
 struct Token

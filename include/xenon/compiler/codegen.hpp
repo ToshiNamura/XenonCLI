@@ -39,18 +39,32 @@ class CodeGenerator
         std::size_t BaseSlot = 0;
     };
 
+    struct LoopContext
+    {
+        std::vector<std::size_t> breaks;
+        std::vector<std::size_t> continues;
+    };
+    struct SwitchContext
+    {
+        std::vector<std::size_t> breaks;
+    };
+
     [[noreturn]] void fail(const std::string& message);
 
     void compileFunction(const FunctionDecl& function, Module& out, const std::string& qualifiedName = {});
     void compileTypeDecl(const TypeDecl& decl, Module& out);
     void compileGlobalVar(const GlobalVarDecl& global, Module& out);
     void compileStatement(const Stmt& stmt);
+    void compileFor(const ForStmt& stmt);
+    void compileDoWhile(const DoWhileStmt& stmt);
+    void compileSwitch(const SwitchStmt& stmt);
     void compileBlock(const BlockStmt& block);
     void compileExpression(const Expr& expr);
 
     void enterScope();
     void leaveScope();
     void declareLocal(const std::string& name, const std::string& type = {});
+    [[nodiscard]] std::size_t allocateTemp();
     [[nodiscard]] std::size_t resolveLocal(const std::string& name);
     [[nodiscard]] bool hasLocal(const std::string& name) const;
     [[nodiscard]] std::size_t resolveGlobal(const std::string& name);
@@ -76,6 +90,8 @@ class CodeGenerator
     bool _hintMode = false;
     XenonBinary* _binary = nullptr;
     std::vector<Scope> _scopes;
+    std::vector<LoopContext> _loops;
+    std::vector<SwitchContext> _switches;
     std::size_t _slotCounter = 0;
     std::size_t _maxSlots = 0;
     struct FunctionTemplate

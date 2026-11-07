@@ -325,6 +325,13 @@ void CodeGenerator::declareLocal(const std::string& name, const std::string& typ
     _maxSlots = std::max(_maxSlots, _slotCounter);
 }
 
+std::size_t CodeGenerator::allocateTemp()
+{
+    const auto slot = _slotCounter++;
+    _maxSlots = std::max(_maxSlots, _slotCounter);
+    return slot;
+}
+
 std::size_t CodeGenerator::resolveLocal(const std::string& name)
 {
     for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it)
@@ -577,16 +584,212 @@ void CodeGenerator::compileStatement(const Stmt& stmt)
     else if (const auto* w = dynamic_cast<const WhileStmt*>(&stmt))
     {
         const auto loopStart = _binary->codePosition();
+        _loops.push_back(LoopContext{});
         compileExpression(*w->Condition);
         const auto exitJump = emitJump(OpCode::JumpIfFalse);
         compileStatement(*w->Body);
         const auto backJump = emitJump(OpCode::Jump);
         patchJump(backJump, loopStart);
-        patchJump(exitJump, _binary->codePosition());
+
+        const auto end = _binary->codePosition();
+        patchJump(exitJump, end);
+
+        const auto loop = std::move(_loops.back());
+        _loops.pop_back();
+        for (const auto offset : loop.breaks)
+        {
+            patchJump(offset, end);
+        }
+        for (const auto offset : loop.continues)
+        {
+            patchJump(offset, loopStart);
+        }
+    }
+    else if (const auto* dw = dynamic_cast<const DoWhileStmt*>(&stmt))
+    {
+        compileDoWhile(*dw);
+    }
+    else if (const auto* f = dynamic_cast<const ForStmt*>(&stmt))
+    {
+        compileFor(*f);
+    }
+    else if (const auto* s = dynamic_cast<const SwitchStmt*>(&stmt))
+    {
+        compileSwitch(*s);
+    }
+    else if (dynamic_cast<const BreakStmt*>(&stmt) != nullptr)
+    {
+        if (!_switches.empty())
+        {
+            _switches.back().breaks.push_back(emitJump(OpCode::Jump));
+        }
+        else if (!_loops.empty())
+        {
+            _loops.back().breaks.push_back(emitJump(OpCode::Jump));
+        }
+        else
+        {
+            fail("'break' outside a loop or switch");
+        }
+    }
+    else if (dynamic_cast<const ContinueStmt*>(&stmt) != nullptr)
+    {
+        if (_loops.empty())
+        {
+            fail("'continue' outside a loop");
+        }
+        _loops.back().continues.push_back(emitJump(OpCode::Jump));
     }
     else
     {
         fail("unknown statement");
+    }
+}
+
+void CodeGenerator::compileFor(const ForStmt& stmt)
+{
+    if (stmt.Init)
+    {
+        compileStatement(*stmt.Init);
+    }
+
+    const auto conditionStart = _binary->codePosition();
+    _loops.push_back(LoopContext{});
+
+    const bool hasCondition = stmt.Condition != nullptr;
+    std::size_t exitJump = 0;
+    if (hasCondition)
+    {
+        compileExpression(*stmt.Condition);
+        exitJump = emitJump(OpCode::JumpIfFalse);
+    }
+
+    compileStatement(*stmt.Body);
+
+    const auto incrementStart = _binary->codePosition();
+    if (stmt.Increment)
+    {
+        compileExpression(*stmt.Increment);
+        emitOpcode(OpCode::Pop);
+    }
+
+    const auto backJump = emitJump(OpCode::Jump);
+    patchJump(backJump, conditionStart);
+
+    const auto end = _binary->codePosition();
+    if (hasCondition)
+    {
+        patchJump(exitJump, end);
+    }
+
+    const auto continueTarget = stmt.Increment ? incrementStart : conditionStart;
+
+    const auto loop = std::move(_loops.back());
+    _loops.pop_back();
+    for (const auto offset : loop.breaks)
+    {
+        patchJump(offset, end);
+    }
+    for (const auto offset : loop.continues)
+    {
+        patchJump(offset, continueTarget);
+    }
+}
+
+void CodeGenerator::compileDoWhile(const DoWhileStmt& stmt)
+{
+    const auto loopStart = _binary->codePosition();
+    _loops.push_back(LoopContext{});
+
+    compileStatement(*stmt.Body);
+
+    const auto conditionStart = _binary->codePosition();
+    compileExpression(*stmt.Condition);
+    const auto exitJump = emitJump(OpCode::JumpIfFalse);
+    const auto backJump = emitJump(OpCode::Jump);
+    patchJump(backJump, loopStart);
+
+    const auto end = _binary->codePosition();
+    patchJump(exitJump, end);
+
+    const auto loop = std::move(_loops.back());
+    _loops.pop_back();
+    for (const auto offset : loop.breaks)
+    {
+        patchJump(offset, end);
+    }
+    for (const auto offset : loop.continues)
+    {
+        patchJump(offset, conditionStart);
+    }
+}
+
+void CodeGenerator::compileSwitch(const SwitchStmt& stmt)
+{
+    compileExpression(*stmt.Condition);
+    const auto tempSlot = allocateTemp();
+    emitOpcode(OpCode::StoreLocal);
+    emitByte(static_cast<std::uint8_t>(tempSlot));
+
+    _switches.push_back(SwitchContext{});
+
+    std::vector<std::size_t> bodyJumpForCase(stmt.Cases.size(), 0);
+    std::size_t defaultIndex = static_cast<std::size_t>(-1);
+
+    for (std::size_t i = 0; i < stmt.Cases.size(); ++i)
+    {
+        const CaseClause& clause = stmt.Cases[i];
+        if (clause.Value == nullptr)
+        {
+            defaultIndex = i;
+            continue;
+        }
+
+        emitOpcode(OpCode::LoadLocal);
+        emitByte(static_cast<std::uint8_t>(tempSlot));
+        emitConstant(evaluateConstant(clause.Value.get()));
+        emitOpcode(OpCode::Equal);
+        const auto falseJump = emitJump(OpCode::JumpIfFalse);
+        bodyJumpForCase[i] = emitJump(OpCode::Jump);
+        patchJump(falseJump, _binary->codePosition());
+    }
+
+    const bool hasDefault = defaultIndex != static_cast<std::size_t>(-1);
+    std::size_t defaultJump = 0;
+    if (hasDefault)
+    {
+        defaultJump = emitJump(OpCode::Jump);
+    }
+    const auto endJump = emitJump(OpCode::Jump);
+
+    for (std::size_t i = 0; i < stmt.Cases.size(); ++i)
+    {
+        const CaseClause& clause = stmt.Cases[i];
+        const auto bodyOffset = _binary->codePosition();
+
+        if (clause.Value != nullptr)
+        {
+            patchJump(bodyJumpForCase[i], bodyOffset);
+        }
+        else if (hasDefault)
+        {
+            patchJump(defaultJump, bodyOffset);
+        }
+
+        for (const auto& statement : clause.Statements)
+        {
+            compileStatement(*statement);
+        }
+    }
+
+    const auto end = _binary->codePosition();
+    patchJump(endJump, end);
+
+    const auto context = std::move(_switches.back());
+    _switches.pop_back();
+    for (const auto offset : context.breaks)
+    {
+        patchJump(offset, end);
     }
 }
 

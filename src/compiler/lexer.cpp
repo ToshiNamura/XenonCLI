@@ -242,7 +242,7 @@ Token Lexer::next()
         }
         else
         {
-            token.Type = TokenType::Invalid;
+            token.Type = TokenType::Colon;
         }
         break;
     case '.':

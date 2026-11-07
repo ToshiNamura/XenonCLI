@@ -49,6 +49,9 @@ class Parser
     std::unique_ptr<BlockStmt> parseBlock();
     std::unique_ptr<Stmt> parseStatement();
     std::unique_ptr<Stmt> parseVarDecl();
+    std::unique_ptr<Stmt> parseForStatement();
+    std::unique_ptr<Stmt> parseDoWhileStatement();
+    std::unique_ptr<Stmt> parseSwitchStatement();
     std::unique_ptr<Expr> parseExpression();
     std::unique_ptr<Expr> parseAssignment();
     std::unique_ptr<Expr> parseOr();
