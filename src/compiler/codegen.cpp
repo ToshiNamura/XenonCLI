@@ -243,6 +243,11 @@ void CodeGenerator::compileExpression(const Expr& expr)
         emitConstant(Null{});
         return;
     }
+    if (const auto* s = dynamic_cast<const StringExpr*>(&expr))
+    {
+        emitString(s->Value);
+        return;
+    }
     if (const auto* v = dynamic_cast<const VariableExpr*>(&expr))
     {
         emitOpcode(OpCode::LoadLocal);
@@ -381,6 +386,13 @@ void CodeGenerator::emitConstant(Value value)
 {
     const auto index = _binary->addConstant(std::move(value));
     emitOpcode(OpCode::Constant);
+    emitByte(static_cast<std::uint8_t>(index));
+}
+
+void CodeGenerator::emitString(const std::string& value)
+{
+    const auto index = _binary->addString(value);
+    emitOpcode(OpCode::String);
     emitByte(static_cast<std::uint8_t>(index));
 }
 

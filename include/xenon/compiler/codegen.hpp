@@ -56,6 +56,7 @@ class CodeGenerator
     [[nodiscard]] std::size_t emitJump(OpCode op);
     void patchJump(std::size_t operandOffset, std::size_t target);
     void emitConstant(Value value);
+    void emitString(const std::string& value);
 
     const Program& _program;
     Module _hints;

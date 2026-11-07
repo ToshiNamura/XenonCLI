@@ -9,6 +9,7 @@ namespace xenon
 enum class OpCode : std::uint8_t
 {
     Constant,     ///< Push a constant from the chunk's constant pool (1-byte operand).
+    String,       ///< Push a string literal as a heap String object (1-byte operand).
     LoadLocal,    ///< Push a local variable (1-byte slot operand).
     StoreLocal,   ///< Pop into a local variable (1-byte slot operand).
     Pop,          ///< Discard the top of the stack.

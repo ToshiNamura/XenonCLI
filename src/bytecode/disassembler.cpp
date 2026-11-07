@@ -18,6 +18,7 @@ std::size_t operandSize(OpCode op)
     switch (op)
     {
     case OpCode::Constant:
+    case OpCode::String:
     case OpCode::LoadLocal:
     case OpCode::StoreLocal:
     case OpCode::Call:
@@ -36,6 +37,7 @@ void disassemble(const XenonBinary& binary, std::ostream& os)
 {
     const auto& code = binary.code();
     const auto& constants = binary.constants();
+    const auto& strings = binary.strings();
     const auto& lines = binary.lines();
 
     os << "== Xenon bytecode (" << code.size() << " bytes) ==\n";
@@ -56,6 +58,10 @@ void disassemble(const XenonBinary& binary, std::ostream& os)
             if (op == OpCode::Constant && operand < constants.size())
             {
                 os << "  ; " << constants[operand];
+            }
+            else if (op == OpCode::String && operand < strings.size())
+            {
+                os << "  ; \"" << strings[operand] << '"';
             }
         }
         else if (operandSize(op) == 2 && offset + 2 < code.size())

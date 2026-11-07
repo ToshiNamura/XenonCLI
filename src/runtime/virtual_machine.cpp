@@ -8,6 +8,7 @@
 
 #include "xenon/bytecode/opcode.hpp"
 #include "xenon/runtime/error.hpp"
+#include "xenon/runtime/virtual_heap.hpp"
 
 namespace xenon
 {
@@ -247,6 +248,24 @@ void VirtualMachine::execute(VirtualStack& stack)
         case OpCode::Constant:
             push(readConstant());
             break;
+
+        case OpCode::String:
+        {
+            const auto index = readByte();
+            const auto& strings = binary.strings();
+            if (index >= strings.size())
+            {
+                throw RuntimeError("string index out of range");
+            }
+            if (_heap == nullptr)
+            {
+                throw RuntimeError("no heap available for string literal");
+            }
+            const Ref ref = _heap->allocate(ObjectKind::String);
+            _heap->get(ref)->Text = strings[index];
+            push(Value{ref});
+            break;
+        }
 
         case OpCode::LoadLocal:
         {

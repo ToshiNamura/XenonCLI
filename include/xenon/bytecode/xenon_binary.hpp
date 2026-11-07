@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "xenon/bytecode/opcode.hpp"
@@ -14,8 +15,8 @@ namespace xenon
 /// pool — the unit of code the virtual machine executes.
 ///
 /// Instructions are encoded as a 1-byte opcode optionally followed by operands.
-/// Currently only `OpCode::Constant` has an operand: a 1-byte index into the
-/// constant pool (limiting a binary to 256 constants — a known early constraint).
+/// Operands are currently 1-byte indexes into the constant or string pools
+/// (limiting a binary to 256 entries of each — a known early constraint).
 class XenonBinary
 {
   public:
@@ -27,6 +28,9 @@ class XenonBinary
 
     /// Adds `value` to the constant pool and returns its index.
     [[nodiscard]] std::size_t addConstant(Value value);
+
+    /// Adds `value` to the string pool and returns its index.
+    [[nodiscard]] std::size_t addString(std::string value);
 
     /// Returns the current code stream length (the next byte offset).
     [[nodiscard]] std::size_t codePosition() const noexcept
@@ -45,6 +49,10 @@ class XenonBinary
     {
         return _constants;
     }
+    [[nodiscard]] const std::vector<std::string>& strings() const noexcept
+    {
+        return _strings;
+    }
     [[nodiscard]] const std::vector<int>& lines() const noexcept
     {
         return _lines;
@@ -58,6 +66,7 @@ class XenonBinary
   private:
     std::vector<std::uint8_t> _code;
     std::vector<Value> _constants;
+    std::vector<std::string> _strings; ///< String literals referenced by `OpCode::String`.
     std::vector<int> _lines; ///< Source line for every byte (diagnostics).
 };
 

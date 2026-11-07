@@ -81,7 +81,7 @@ bool Parser::isType(const Token& token) const
         return false;
     }
     return token.Lexeme == "int" || token.Lexeme == "double" || token.Lexeme == "bool" ||
-           token.Lexeme == "void";
+           token.Lexeme == "string" || token.Lexeme == "void";
 }
 
 bool Parser::parse(Program& out)
@@ -508,7 +508,12 @@ std::unique_ptr<Expr> Parser::parsePrimary()
 
     if (match(TokenType::String))
     {
-        fail("string literals are not supported yet");
+        auto expr = std::make_unique<StringExpr>();
+        expr->Line = _previous.Line;
+        const std::string_view lexeme = _previous.Lexeme;
+        expr->Value = lexeme.size() >= 2 ? std::string(lexeme.substr(1, lexeme.size() - 2))
+                                         : std::string();
+        return expr;
     }
 
     if (matchKeyword("true"))

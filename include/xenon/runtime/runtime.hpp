@@ -25,6 +25,8 @@ namespace xenon
 class Runtime
 {
   public:
+    Runtime();
+
     // ---- modules ----
     void addModule(const Module& module);
     void loadModuleFile(const std::string& path);

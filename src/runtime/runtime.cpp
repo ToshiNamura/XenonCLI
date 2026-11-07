@@ -11,6 +11,11 @@
 namespace xenon
 {
 
+Runtime::Runtime()
+{
+    _vm.setHeap(_heap);
+}
+
 // ---- modules ----
 
 void Runtime::addModule(const Module& module)

@@ -22,6 +22,12 @@ std::size_t XenonBinary::addConstant(Value value)
     return _constants.size() - 1;
 }
 
+std::size_t XenonBinary::addString(std::string value)
+{
+    _strings.push_back(std::move(value));
+    return _strings.size() - 1;
+}
+
 void XenonBinary::patchU16(std::size_t offset, std::uint16_t value)
 {
     _code[offset] = static_cast<std::uint8_t>(value & 0xff);

@@ -17,7 +17,7 @@ namespace
 {
 
 constexpr char Magic[4] = {'X', 'E', 'N', 'M'};
-constexpr std::uint32_t Version = 1;
+constexpr std::uint32_t Version = 2;
 
 constexpr std::uint32_t MaxCount = 1u << 22;
 
@@ -105,6 +105,13 @@ void writeBinary(std::ostream& os, const XenonBinary& binary)
     for (const auto& constant : constants)
     {
         writeValue(os, constant);
+    }
+
+    const auto& strings = binary.strings();
+    writeU32(os, static_cast<std::uint32_t>(strings.size()));
+    for (const auto& string : strings)
+    {
+        writeString(os, string);
     }
 
     const auto& lines = binary.lines();
@@ -217,6 +224,13 @@ XenonBinary readBinary(std::istream& is)
     for (std::uint32_t i = 0; i < constantCount; ++i)
     {
         (void)binary.addConstant(readValue(is));
+    }
+
+    const auto stringCount = readU32(is);
+    checkCount(stringCount);
+    for (std::uint32_t i = 0; i < stringCount; ++i)
+    {
+        (void)binary.addString(readString(is));
     }
 
     const auto lineCount = readU32(is);

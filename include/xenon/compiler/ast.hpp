@@ -26,6 +26,11 @@ struct BoolExpr : Expr
     bool Value = false;
 };
 
+struct StringExpr : Expr
+{
+    std::string Value;
+};
+
 struct NullExpr : Expr
 {
 };

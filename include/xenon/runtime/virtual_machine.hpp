@@ -15,6 +15,8 @@
 namespace xenon
 {
 
+class VirtualHeap;
+
 /// A host-provided function that satisfies a `.hint` external declaration.
 using NativeFunction = std::function<Value(const std::vector<Value>&)>;
 
@@ -65,6 +67,12 @@ class VirtualMachine
     /// Clears the execution state (frames), not the caller's stack.
     void reset();
 
+    /// Attaches the heap used to allocate objects for string literals.
+    void setHeap(VirtualHeap& heap) noexcept
+    {
+        _heap = &heap;
+    }
+
   private:
     struct Frame
     {
@@ -82,6 +90,7 @@ class VirtualMachine
     std::vector<const Symbol*> _functions;
     std::unordered_map<std::string, NativeFunction> _natives;
     std::vector<Frame> _frames;
+    VirtualHeap* _heap = nullptr;
     Value _lastValue{Null{}};
 };
 

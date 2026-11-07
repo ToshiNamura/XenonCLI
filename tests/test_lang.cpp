@@ -142,6 +142,34 @@ bool test(double x)
           "test(50) should be false");
 }
 
+void testStringLiteral()
+{
+    using namespace xenon;
+
+    const std::string source = R"(
+export module Strings;
+
+string greet()
+{
+    string s = "hello";
+    return s;
+}
+)";
+
+    const auto module = compileOrFail(source, "string literal");
+
+    Runtime runtime;
+    runtime.addModule(module);
+    check(runtime.run("greet") == InterpretResult::Ok, "run('greet') failed");
+
+    const auto* ref = std::get_if<Ref>(&runtime.lastValue());
+    check(ref != nullptr, "greet() result is not a reference");
+    if (ref != nullptr)
+    {
+        check(runtime.stringValue(*ref) == "hello", "greet() string value wrong");
+    }
+}
+
 void testParseError()
 {
     using namespace xenon;
@@ -169,6 +197,7 @@ int main()
         testFunctionCall();
         testLocalsAndControlFlow();
         testBooleanLogic();
+        testStringLiteral();
         testParseError();
     }
     catch (const std::exception& error)
