@@ -17,13 +17,13 @@ class ModuleFileError : public std::runtime_error
 };
 
 /// Serializes `module` into `os` in the binary `.module` format.
-void write_module_file(std::ostream& os, const Module& module);
+void writeModuleFile(std::ostream& os, const Module& module);
 
 /// Deserializes a module from `is` into `out`. Throws `ModuleFileError`.
-void read_module_file(std::istream& is, Module& out);
+void readModuleFile(std::istream& is, Module& out);
 
 /// Convenience overloads for file paths.
-void write_module_file(const std::string& path, const Module& module);
-void read_module_file(const std::string& path, Module& out);
+void writeModuleFile(const std::string& path, const Module& module);
+void readModuleFile(const std::string& path, Module& out);
 
 } // namespace xenon

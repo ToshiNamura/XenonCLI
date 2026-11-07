@@ -1,36 +1,37 @@
 #include "xenon/compiler/lexer.hpp"
 
 #include <cctype>
+#include <cstddef>
 
 namespace xenon
 {
 
-Lexer::Lexer(std::string_view source) : source_(source)
+Lexer::Lexer(std::string_view source) : _source(source)
 {
 }
 
 char Lexer::peek(std::size_t ahead) const
 {
-    return pos_ + ahead < source_.size() ? source_[pos_ + ahead] : '\0';
+    return _pos + ahead < _source.size() ? _source[_pos + ahead] : '\0';
 }
 
 char Lexer::advance()
 {
-    if (pos_ >= source_.size())
+    if (_pos >= _source.size())
     {
         return '\0';
     }
-    const char c = source_[pos_++];
+    const char c = _source[_pos++];
     if (c == '\n')
     {
-        ++line_;
+        ++_line;
     }
     return c;
 }
 
-void Lexer::skip_trivia()
+void Lexer::skipTrivia()
 {
-    while (pos_ < source_.size())
+    while (_pos < _source.size())
     {
         const char c = peek();
         if (std::isspace(static_cast<unsigned char>(c)))
@@ -40,7 +41,7 @@ void Lexer::skip_trivia()
         }
         if (c == '/' && peek(1) == '/')
         {
-            while (pos_ < source_.size() && peek() != '\n')
+            while (_pos < _source.size() && peek() != '\n')
             {
                 advance();
             }
@@ -50,11 +51,11 @@ void Lexer::skip_trivia()
         {
             advance();
             advance();
-            while (pos_ < source_.size() && !(peek() == '*' && peek(1) == '/'))
+            while (_pos < _source.size() && !(peek() == '*' && peek(1) == '/'))
             {
                 advance();
             }
-            if (pos_ < source_.size())
+            if (_pos < _source.size())
             {
                 advance();
                 advance();
@@ -67,18 +68,18 @@ void Lexer::skip_trivia()
 
 Token Lexer::next()
 {
-    skip_trivia();
+    skipTrivia();
 
     Token token;
-    token.line = line_;
+    token.Line = _line;
 
-    if (pos_ >= source_.size())
+    if (_pos >= _source.size())
     {
-        token.type = TokenType::End;
+        token.Type = TokenType::End;
         return token;
     }
 
-    const std::size_t start = pos_;
+    const std::size_t start = _pos;
     const char c = advance();
 
     if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
@@ -87,8 +88,8 @@ Token Lexer::next()
         {
             advance();
         }
-        token.type = TokenType::Identifier;
-        token.lexeme = source_.substr(start, pos_ - start);
+        token.Type = TokenType::Identifier;
+        token.Lexeme = _source.substr(start, _pos - start);
         return token;
     }
 
@@ -106,134 +107,134 @@ Token Lexer::next()
                 advance();
             }
         }
-        token.type = TokenType::Number;
-        token.lexeme = source_.substr(start, pos_ - start);
+        token.Type = TokenType::Number;
+        token.Lexeme = _source.substr(start, _pos - start);
         return token;
     }
 
     if (c == '"')
     {
-        while (pos_ < source_.size() && peek() != '"')
+        while (_pos < _source.size() && peek() != '"')
         {
             advance();
         }
-        if (pos_ < source_.size())
+        if (_pos < _source.size())
         {
             advance(); // closing quote
         }
-        token.type = TokenType::String;
-        token.lexeme = source_.substr(start, pos_ - start);
+        token.Type = TokenType::String;
+        token.Lexeme = _source.substr(start, _pos - start);
         return token;
     }
 
-    token.lexeme = source_.substr(start, 1);
+    token.Lexeme = _source.substr(start, 1);
 
     switch (c)
     {
     case '(':
-        token.type = TokenType::LeftParen;
+        token.Type = TokenType::LeftParen;
         break;
     case ')':
-        token.type = TokenType::RightParen;
+        token.Type = TokenType::RightParen;
         break;
     case '{':
-        token.type = TokenType::LeftBrace;
+        token.Type = TokenType::LeftBrace;
         break;
     case '}':
-        token.type = TokenType::RightBrace;
+        token.Type = TokenType::RightBrace;
         break;
     case ',':
-        token.type = TokenType::Comma;
+        token.Type = TokenType::Comma;
         break;
     case ';':
-        token.type = TokenType::Semicolon;
+        token.Type = TokenType::Semicolon;
         break;
     case '+':
-        token.type = TokenType::Plus;
+        token.Type = TokenType::Plus;
         break;
     case '-':
-        token.type = TokenType::Minus;
+        token.Type = TokenType::Minus;
         break;
     case '*':
-        token.type = TokenType::Star;
+        token.Type = TokenType::Star;
         break;
     case '/':
-        token.type = TokenType::Slash;
+        token.Type = TokenType::Slash;
         break;
     case '!':
         if (peek() == '=')
         {
             advance();
-            token.lexeme = source_.substr(start, 2);
-            token.type = TokenType::BangEqual;
+            token.Lexeme = _source.substr(start, 2);
+            token.Type = TokenType::BangEqual;
         }
         else
         {
-            token.type = TokenType::Bang;
+            token.Type = TokenType::Bang;
         }
         break;
     case '=':
         if (peek() == '=')
         {
             advance();
-            token.lexeme = source_.substr(start, 2);
-            token.type = TokenType::EqualEqual;
+            token.Lexeme = _source.substr(start, 2);
+            token.Type = TokenType::EqualEqual;
         }
         else
         {
-            token.type = TokenType::Assign;
+            token.Type = TokenType::Assign;
         }
         break;
     case '<':
         if (peek() == '=')
         {
             advance();
-            token.lexeme = source_.substr(start, 2);
-            token.type = TokenType::LessEqual;
+            token.Lexeme = _source.substr(start, 2);
+            token.Type = TokenType::LessEqual;
         }
         else
         {
-            token.type = TokenType::Less;
+            token.Type = TokenType::Less;
         }
         break;
     case '>':
         if (peek() == '=')
         {
             advance();
-            token.lexeme = source_.substr(start, 2);
-            token.type = TokenType::GreaterEqual;
+            token.Lexeme = _source.substr(start, 2);
+            token.Type = TokenType::GreaterEqual;
         }
         else
         {
-            token.type = TokenType::Greater;
+            token.Type = TokenType::Greater;
         }
         break;
     case '&':
         if (peek() == '&')
         {
             advance();
-            token.lexeme = source_.substr(start, 2);
-            token.type = TokenType::AndAnd;
+            token.Lexeme = _source.substr(start, 2);
+            token.Type = TokenType::AndAnd;
         }
         else
         {
-            token.type = TokenType::Invalid;
+            token.Type = TokenType::Invalid;
         }
         break;
     case '|':
         if (peek() == '|')
         {
             advance();
-            token.lexeme = source_.substr(start, 2);
-            token.type = TokenType::OrOr;
+            token.Lexeme = _source.substr(start, 2);
+            token.Type = TokenType::OrOr;
         }
         else
         {
-            token.type = TokenType::Invalid;
+            token.Type = TokenType::Invalid;
         }
         break;
     default:
-        token.type = TokenType::Invalid;
+        token.Type = TokenType::Invalid;
         break;
     }
 

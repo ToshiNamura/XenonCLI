@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "xenon/compiler/ast.hpp"
 #include "xenon/module/module.hpp"
@@ -14,14 +16,14 @@ namespace xenon
 class CodeGenerator
 {
   public:
-    explicit CodeGenerator(const Program& program);
+    CodeGenerator(const Program& program, const Module& hints);
 
     /// Generates bytecode into `out`. Returns `true` on success.
     bool generate(Module& out);
 
-    [[nodiscard]] const std::string& last_error() const noexcept
+    [[nodiscard]] const std::string& lastError() const noexcept
     {
-        return error_;
+        return _error;
     }
 
   private:
@@ -31,36 +33,38 @@ class CodeGenerator
 
     struct Scope
     {
-        std::unordered_map<std::string, std::size_t> names;
-        std::size_t base_slot = 0;
+        std::unordered_map<std::string, std::size_t> Names;
+        std::size_t BaseSlot = 0;
     };
 
     [[noreturn]] void fail(const std::string& message);
 
-    void compile_function(const FunctionDecl& function, Module& out);
-    void compile_statement(const Stmt& stmt);
-    void compile_block(const BlockStmt& block);
-    void compile_expression(const Expr& expr);
+    void compileFunction(const FunctionDecl& function, Module& out);
+    void compileTypeDecl(const TypeDecl& decl, Module& out);
+    void compileStatement(const Stmt& stmt);
+    void compileBlock(const BlockStmt& block);
+    void compileExpression(const Expr& expr);
 
-    void enter_scope();
-    void leave_scope();
-    void declare_local(const std::string& name);
-    [[nodiscard]] std::size_t resolve_local(const std::string& name);
+    void enterScope();
+    void leaveScope();
+    void declareLocal(const std::string& name);
+    [[nodiscard]] std::size_t resolveLocal(const std::string& name);
 
-    void emit_opcode(OpCode op);
-    void emit_byte(std::uint8_t byte);
-    void emit_u16(std::uint16_t value);
-    [[nodiscard]] std::size_t emit_jump(OpCode op);
-    void patch_jump(std::size_t operand_offset, std::size_t target);
-    void emit_constant(Value value);
+    void emitOpcode(OpCode op);
+    void emitByte(std::uint8_t byte);
+    void emitU16(std::uint16_t value);
+    [[nodiscard]] std::size_t emitJump(OpCode op);
+    void patchJump(std::size_t operandOffset, std::size_t target);
+    void emitConstant(Value value);
 
-    const Program& program_;
-    Chunk* chunk_ = nullptr;
-    std::vector<Scope> scopes_;
-    std::size_t slot_counter_ = 0;
-    std::size_t max_slots_ = 0;
-    std::unordered_map<std::string, std::size_t> function_indices_;
-    std::string error_;
+    const Program& _program;
+    Module _hints;
+    XenonBinary* _binary = nullptr;
+    std::vector<Scope> _scopes;
+    std::size_t _slotCounter = 0;
+    std::size_t _maxSlots = 0;
+    std::unordered_map<std::string, std::size_t> _functionIndices;
+    std::string _error;
 };
 
 } // namespace xenon

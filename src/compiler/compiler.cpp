@@ -1,5 +1,7 @@
 #include "xenon/compiler/compiler.hpp"
 
+#include <string>
+
 #include "xenon/compiler/codegen.hpp"
 #include "xenon/compiler/lexer.hpp"
 #include "xenon/compiler/module_parser.hpp"
@@ -8,36 +10,69 @@
 namespace xenon
 {
 
-bool Compiler::compile(std::string_view source, Module& out)
+bool Compiler::compile(std::string_view source, Module& out, const std::vector<Module>& hints)
 {
-    error_.clear();
-    header_ = ModuleHeader{};
+    _error.clear();
+    _header = ModuleHeader{};
     out = Module{};
 
-    ModuleParser header_parser;
-    if (header_parser.parse(source, header_) != ModuleParseResult::Ok)
+    ModuleParser headerParser;
+    if (headerParser.parse(source, _header) != ModuleParseResult::Ok)
     {
-        error_ = header_parser.last_error();
+        _error = headerParser.lastError();
         return false;
     }
 
-    out.name = header_.name;
-    out.imports = header_.imports;
+    out.Name = _header.Name;
+    out.Imports = _header.Imports;
 
-    Lexer lexer(source.substr(header_.body_offset));
+    Lexer lexer(source.substr(_header.BodyOffset));
     Parser parser(lexer);
 
     Program program;
     if (!parser.parse(program))
     {
-        error_ = parser.last_error();
+        _error = parser.lastError();
         return false;
     }
 
-    CodeGenerator codegen(program);
+    Module mergedHints;
+    for (const auto& hint : hints)
+    {
+        mergedHints.Symbols.insert(mergedHints.Symbols.end(), hint.Symbols.begin(),
+                                   hint.Symbols.end());
+    }
+
+    CodeGenerator codegen(program, mergedHints);
     if (!codegen.generate(out))
     {
-        error_ = codegen.last_error();
+        _error = codegen.lastError();
+        return false;
+    }
+
+    return true;
+}
+
+bool Compiler::compileHints(std::string_view source, Module& out)
+{
+    _error.clear();
+    _header = ModuleHeader{};
+    out = Module{};
+
+    Lexer lexer(source);
+    Parser parser(lexer);
+
+    Program program;
+    if (!parser.parse(program))
+    {
+        _error = parser.lastError();
+        return false;
+    }
+
+    CodeGenerator codegen(program, Module{});
+    if (!codegen.generate(out))
+    {
+        _error = codegen.lastError();
         return false;
     }
 

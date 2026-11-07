@@ -1,5 +1,7 @@
 #include "xenon/bytecode/disassembler.hpp"
 
+#include <cstddef>
+#include <cstdint>
 #include <iomanip>
 #include <ostream>
 
@@ -11,7 +13,7 @@ namespace
 {
 
 /// Number of operand bytes following the opcode.
-std::size_t operand_size(OpCode op)
+std::size_t operandSize(OpCode op)
 {
     switch (op)
     {
@@ -30,11 +32,11 @@ std::size_t operand_size(OpCode op)
 
 } // namespace
 
-void disassemble(const Chunk& chunk, std::ostream& os)
+void disassemble(const XenonBinary& binary, std::ostream& os)
 {
-    const auto& code = chunk.code();
-    const auto& constants = chunk.constants();
-    const auto& lines = chunk.lines();
+    const auto& code = binary.code();
+    const auto& constants = binary.constants();
+    const auto& lines = binary.lines();
 
     os << "== Xenon bytecode (" << code.size() << " bytes) ==\n";
 
@@ -42,12 +44,12 @@ void disassemble(const Chunk& chunk, std::ostream& os)
     {
         const auto op = static_cast<OpCode>(code[offset]);
         const int line = offset < lines.size() ? lines[offset] : -1;
-        const std::size_t size = 1 + operand_size(op);
+        const std::size_t size = 1 + operandSize(op);
 
         os << std::right << std::setw(4) << offset << " | " << std::setw(4) << line << " | "
-           << std::left << std::setw(12) << opcode_name(op);
+           << std::left << std::setw(12) << opcodeName(op);
 
-        if (operand_size(op) == 1 && offset + 1 < code.size())
+        if (operandSize(op) == 1 && offset + 1 < code.size())
         {
             const auto operand = code[offset + 1];
             os << ' ' << static_cast<unsigned>(operand);
@@ -56,7 +58,7 @@ void disassemble(const Chunk& chunk, std::ostream& os)
                 os << "  ; " << constants[operand];
             }
         }
-        else if (operand_size(op) == 2 && offset + 2 < code.size())
+        else if (operandSize(op) == 2 && offset + 2 < code.size())
         {
             const auto operand = static_cast<std::int16_t>(
                 code[offset + 1] | (static_cast<std::uint16_t>(code[offset + 2]) << 8));

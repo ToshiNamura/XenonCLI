@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "xenon/compiler/module.hpp"
 #include "xenon/module/module.hpp"
@@ -10,32 +11,35 @@ namespace xenon
 {
 
 /// The Xenon front end: translates a C++-like source module into a compiled
-/// `.module` artifact (packed symbols for the VM).
+/// `.module` artifact (packed symbols for the virtual machine).
 ///
 /// Pipeline: source -> module header -> lexer -> parser -> code generator -> Module.
-/// The module header (`export module`, `import`, `#include`) is parsed first;
-/// the body compiler is not implemented yet.
 class Compiler
 {
   public:
-    /// Compiles `source` into the compiled `out` module. Returns `true` on success.
-    [[nodiscard]] bool compile(std::string_view source, Module& out);
+    /// Compiles `source` into the compiled `out` module. `hints` supplies
+    /// external declarations (`.hint` files). Returns `true` on success.
+    [[nodiscard]] bool compile(std::string_view source, Module& out,
+                               const std::vector<Module>& hints = {});
+
+    /// Compiles a `.hint` file (declarations only) into `out`.
+    [[nodiscard]] bool compileHints(std::string_view source, Module& out);
 
     /// The source-level module header parsed during the last `compile` call.
     [[nodiscard]] const ModuleHeader& header() const noexcept
     {
-        return header_;
+        return _header;
     }
 
     /// Human-readable description of the last compilation error.
-    [[nodiscard]] const std::string& last_error() const noexcept
+    [[nodiscard]] const std::string& lastError() const noexcept
     {
-        return error_;
+        return _error;
     }
 
   private:
-    ModuleHeader header_;
-    std::string error_;
+    ModuleHeader _header;
+    std::string _error;
 };
 
 } // namespace xenon

@@ -36,9 +36,9 @@ enum class TokenType
 
 struct Token
 {
-    TokenType type = TokenType::End;
-    std::string_view lexeme;
-    int line = 1;
+    TokenType Type = TokenType::End;
+    std::string_view Lexeme;
+    int Line = 1;
 };
 
 /// Tokenizes C++-like Xenon source text.
@@ -51,13 +51,13 @@ class Lexer
     Token next();
 
   private:
-    void skip_trivia();
+    void skipTrivia();
     char peek(std::size_t ahead = 0) const;
     char advance();
 
-    std::string_view source_;
-    std::size_t pos_ = 0;
-    int line_ = 1;
+    std::string_view _source;
+    std::size_t _pos = 0;
+    int _line = 1;
 };
 
 } // namespace xenon

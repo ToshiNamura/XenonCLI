@@ -1,6 +1,10 @@
-#include "xenon/runtime/vm.hpp"
+#include "xenon/runtime/virtual_machine.hpp"
 
+#include <cstddef>
+#include <cstdint>
+#include <string>
 #include <utility>
+#include <variant>
 
 #include "xenon/bytecode/opcode.hpp"
 #include "xenon/runtime/error.hpp"
@@ -27,7 +31,7 @@ bool truthy(const Value& value)
     return true; // Ref
 }
 
-bool values_equal(const Value& a, const Value& b)
+bool valuesEqual(const Value& a, const Value& b)
 {
     if (const auto* na = std::get_if<double>(&a))
     {
@@ -58,30 +62,45 @@ bool values_equal(const Value& a, const Value& b)
 
 } // namespace
 
-void VM::reset()
+void VirtualMachine::reset()
 {
-    frames_.clear();
-    last_value_ = Null{};
+    _frames.clear();
+    _lastValue = Null{};
 }
 
-void VM::load(const Module& module)
+void VirtualMachine::load(const Module& module)
 {
-    symbols_ = module.symbols;
-    functions_.clear();
-    for (const auto& symbol : symbols_)
+    _symbols = module.Symbols;
+    rebuildFunctionTable();
+}
+
+void VirtualMachine::loadAll(const std::vector<Module>& modules)
+{
+    _symbols.clear();
+    for (const auto& module : modules)
     {
-        if (symbol.kind == SymbolKind::Function)
+        _symbols.insert(_symbols.end(), module.Symbols.begin(), module.Symbols.end());
+    }
+    rebuildFunctionTable();
+}
+
+void VirtualMachine::rebuildFunctionTable()
+{
+    _functions.clear();
+    for (const auto& symbol : _symbols)
+    {
+        if (symbol.Kind == SymbolKind::Function)
         {
-            functions_.push_back(&symbol);
+            _functions.push_back(&symbol);
         }
     }
 }
 
-const Symbol* VM::find(std::string_view name) const noexcept
+const Symbol* VirtualMachine::find(std::string_view name) const noexcept
 {
-    for (const auto& symbol : symbols_)
+    for (const auto& symbol : _symbols)
     {
-        if (symbol.name == name)
+        if (symbol.Name == name)
         {
             return &symbol;
         }
@@ -89,62 +108,89 @@ const Symbol* VM::find(std::string_view name) const noexcept
     return nullptr;
 }
 
-void VM::call(const Symbol& symbol, std::vector<Value>& stack)
+void VirtualMachine::call(const Symbol& symbol, VirtualStack& stack)
 {
     Frame frame;
-    frame.chunk = &symbol.body;
+    frame.binary = &symbol.Body;
     frame.ip = 0;
-    frame.locals.resize(symbol.arity + symbol.locals);
-    for (std::size_t i = symbol.arity; i-- > 0;)
+    frame.locals.resize(symbol.Arity + symbol.Locals);
+    for (std::size_t i = symbol.Arity; i-- > 0;)
     {
-        if (stack.empty())
-        {
-            throw RuntimeError("stack underflow while passing arguments");
-        }
-        frame.locals[i] = std::move(stack.back());
-        stack.pop_back();
+        frame.locals[i] = stack.pop();
     }
-    frames_.push_back(std::move(frame));
+    _frames.push_back(std::move(frame));
 }
 
-InterpretResult VM::run(std::string_view name, std::vector<Value>& stack)
+void VirtualMachine::registerNative(std::string name, NativeFunction function)
+{
+    _natives[std::move(name)] = std::move(function);
+}
+
+void VirtualMachine::callExternal(const Symbol& symbol, VirtualStack& stack)
+{
+    std::vector<Value> args(symbol.Arity);
+    for (std::size_t i = symbol.Arity; i-- > 0;)
+    {
+        args[i] = stack.pop();
+    }
+
+    const auto it = _natives.find(symbol.Name);
+    if (it == _natives.end())
+    {
+        throw RuntimeError("external function not bound: " + symbol.Name);
+    }
+    stack.push(it->second(args));
+}
+
+InterpretResult VirtualMachine::run(std::string_view name, VirtualStack& stack)
 {
     const Symbol* symbol = find(name);
     if (symbol == nullptr)
     {
         throw RuntimeError("unknown symbol: " + std::string(name));
     }
-    if (symbol->kind != SymbolKind::Function)
+    if (symbol->Kind != SymbolKind::Function)
     {
         throw RuntimeError("symbol is not a function: " + std::string(name));
     }
+
     reset();
+
+    if (!symbol->Defined)
+    {
+        callExternal(*symbol, stack);
+        _lastValue = stack.pop();
+        return InterpretResult::Ok;
+    }
+
     call(*symbol, stack);
     execute(stack);
     return InterpretResult::Ok;
 }
 
-InterpretResult VM::interpret(const Chunk& chunk, std::vector<Value>& stack)
+InterpretResult VirtualMachine::interpret(const XenonBinary& binary, VirtualStack& stack)
 {
     reset();
+
     Frame frame;
-    frame.chunk = &chunk;
+    frame.binary = &binary;
     frame.ip = 0;
-    frames_.push_back(std::move(frame));
+    _frames.push_back(std::move(frame));
+
     execute(stack);
     return InterpretResult::Ok;
 }
 
-void VM::execute(std::vector<Value>& stack)
+void VirtualMachine::execute(VirtualStack& stack)
 {
     while (true)
     {
-        Frame& frame = frames_.back();
-        const Chunk& chunk = *frame.chunk;
-        const auto& code = chunk.code();
-        const auto& constants = chunk.constants();
+        Frame& frame = _frames.back();
+        const XenonBinary& binary = *frame.binary;
+        const auto& code = binary.code();
+        const auto& constants = binary.constants();
 
-        auto read_byte = [&]() -> std::uint8_t
+        auto readByte = [&]() -> std::uint8_t
         {
             if (frame.ip >= code.size())
             {
@@ -153,7 +199,7 @@ void VM::execute(std::vector<Value>& stack)
             return code[frame.ip++];
         };
 
-        auto read_i16 = [&]() -> std::int16_t
+        auto readI16 = [&]() -> std::int16_t
         {
             if (frame.ip + 2 > code.size())
             {
@@ -165,9 +211,9 @@ void VM::execute(std::vector<Value>& stack)
             return value;
         };
 
-        auto read_constant = [&]() -> const Value&
+        auto readConstant = [&]() -> const Value&
         {
-            const auto index = read_byte();
+            const auto index = readByte();
             if (index >= constants.size())
             {
                 throw RuntimeError("constant index out of range");
@@ -177,21 +223,15 @@ void VM::execute(std::vector<Value>& stack)
 
         auto push = [&stack](Value value)
         {
-            stack.push_back(std::move(value));
+            stack.push(std::move(value));
         };
 
         auto pop = [&stack]() -> Value
         {
-            if (stack.empty())
-            {
-                throw RuntimeError("stack underflow");
-            }
-            auto value = std::move(stack.back());
-            stack.pop_back();
-            return value;
+            return stack.pop();
         };
 
-        auto expect_number = [](const Value& value) -> double
+        auto expectNumber = [](const Value& value) -> double
         {
             if (const auto* number = std::get_if<double>(&value))
             {
@@ -200,17 +240,17 @@ void VM::execute(std::vector<Value>& stack)
             throw RuntimeError("operand must be a number");
         };
 
-        const auto op = static_cast<OpCode>(read_byte());
+        const auto op = static_cast<OpCode>(readByte());
 
         switch (op)
         {
         case OpCode::Constant:
-            push(read_constant());
+            push(readConstant());
             break;
 
         case OpCode::LoadLocal:
         {
-            const auto slot = read_byte();
+            const auto slot = readByte();
             if (slot >= frame.locals.size())
             {
                 throw RuntimeError("local slot out of range");
@@ -221,7 +261,7 @@ void VM::execute(std::vector<Value>& stack)
 
         case OpCode::StoreLocal:
         {
-            const auto slot = read_byte();
+            const auto slot = readByte();
             if (slot >= frame.locals.size())
             {
                 throw RuntimeError("local slot out of range");
@@ -235,7 +275,7 @@ void VM::execute(std::vector<Value>& stack)
             break;
 
         case OpCode::Negate:
-            push(-expect_number(pop()));
+            push(-expectNumber(pop()));
             break;
 
         case OpCode::Not:
@@ -244,32 +284,32 @@ void VM::execute(std::vector<Value>& stack)
 
         case OpCode::Add:
         {
-            const auto b = expect_number(pop());
-            const auto a = expect_number(pop());
+            const auto b = expectNumber(pop());
+            const auto a = expectNumber(pop());
             push(a + b);
             break;
         }
 
         case OpCode::Subtract:
         {
-            const auto b = expect_number(pop());
-            const auto a = expect_number(pop());
+            const auto b = expectNumber(pop());
+            const auto a = expectNumber(pop());
             push(a - b);
             break;
         }
 
         case OpCode::Multiply:
         {
-            const auto b = expect_number(pop());
-            const auto a = expect_number(pop());
+            const auto b = expectNumber(pop());
+            const auto a = expectNumber(pop());
             push(a * b);
             break;
         }
 
         case OpCode::Divide:
         {
-            const auto b = expect_number(pop());
-            const auto a = expect_number(pop());
+            const auto b = expectNumber(pop());
+            const auto a = expectNumber(pop());
             if (b == 0.0)
             {
                 throw RuntimeError("division by zero");
@@ -282,7 +322,7 @@ void VM::execute(std::vector<Value>& stack)
         {
             const auto b = pop();
             const auto a = pop();
-            push(Value{values_equal(a, b)});
+            push(Value{valuesEqual(a, b)});
             break;
         }
 
@@ -290,49 +330,49 @@ void VM::execute(std::vector<Value>& stack)
         {
             const auto b = pop();
             const auto a = pop();
-            push(Value{!values_equal(a, b)});
+            push(Value{!valuesEqual(a, b)});
             break;
         }
 
         case OpCode::Less:
         {
-            const auto b = expect_number(pop());
-            const auto a = expect_number(pop());
+            const auto b = expectNumber(pop());
+            const auto a = expectNumber(pop());
             push(Value{a < b});
             break;
         }
 
         case OpCode::LessEqual:
         {
-            const auto b = expect_number(pop());
-            const auto a = expect_number(pop());
+            const auto b = expectNumber(pop());
+            const auto a = expectNumber(pop());
             push(Value{a <= b});
             break;
         }
 
         case OpCode::Greater:
         {
-            const auto b = expect_number(pop());
-            const auto a = expect_number(pop());
+            const auto b = expectNumber(pop());
+            const auto a = expectNumber(pop());
             push(Value{a > b});
             break;
         }
 
         case OpCode::GreaterEqual:
         {
-            const auto b = expect_number(pop());
-            const auto a = expect_number(pop());
+            const auto b = expectNumber(pop());
+            const auto a = expectNumber(pop());
             push(Value{a >= b});
             break;
         }
 
         case OpCode::Jump:
-            frame.ip += read_i16();
+            frame.ip += readI16();
             break;
 
         case OpCode::JumpIfFalse:
         {
-            const auto offset = read_i16();
+            const auto offset = readI16();
             if (!truthy(pop()))
             {
                 frame.ip += offset;
@@ -342,22 +382,30 @@ void VM::execute(std::vector<Value>& stack)
 
         case OpCode::Call:
         {
-            const auto index = read_byte();
-            if (index >= functions_.size())
+            const auto index = readByte();
+            if (index >= _functions.size())
             {
                 throw RuntimeError("function index out of range");
             }
-            call(*functions_[index], stack);
+            const Symbol* function = _functions[index];
+            if (!function->Defined)
+            {
+                callExternal(*function, stack);
+            }
+            else
+            {
+                call(*function, stack);
+            }
             break;
         }
 
         case OpCode::Return:
         {
             Value result = pop();
-            frames_.pop_back();
-            if (frames_.empty())
+            _frames.pop_back();
+            if (_frames.empty())
             {
-                last_value_ = std::move(result);
+                _lastValue = std::move(result);
                 return;
             }
             push(std::move(result));

@@ -26,13 +26,13 @@ class ModuleParser
     ModuleParseResult parse(std::string_view source, ModuleHeader& out);
 
     /// Human-readable description of the last parse error.
-    [[nodiscard]] const std::string& last_error() const noexcept
+    [[nodiscard]] const std::string& lastError() const noexcept
     {
-        return error_;
+        return _error;
     }
 
   private:
-    std::string error_;
+    std::string _error;
 };
 
 } // namespace xenon

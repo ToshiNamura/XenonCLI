@@ -1,6 +1,8 @@
 #include "xenon/compiler/module_parser.hpp"
 
 #include <cctype>
+#include <cstddef>
+#include <string>
 
 namespace xenon
 {
@@ -9,32 +11,32 @@ namespace
 
 std::string_view trim(std::string_view view)
 {
-    const auto is_space = [](char c)
+    const auto isSpace = [](char c)
     {
         return std::isspace(static_cast<unsigned char>(c)) != 0;
     };
 
-    while (!view.empty() && is_space(view.front()))
+    while (!view.empty() && isSpace(view.front()))
     {
         view.remove_prefix(1);
     }
-    while (!view.empty() && is_space(view.back()))
+    while (!view.empty() && isSpace(view.back()))
     {
         view.remove_suffix(1);
     }
     return view;
 }
 
-bool starts_with(std::string_view view, std::string_view prefix)
+bool startsWith(std::string_view view, std::string_view prefix)
 {
     return view.size() >= prefix.size() && view.substr(0, prefix.size()) == prefix;
 }
 
 /// True when `line` starts with `keyword` followed by whitespace or end of line,
 /// e.g. `import X` but not `importX`.
-bool keyword_starts(std::string_view line, std::string_view keyword)
+bool keywordStarts(std::string_view line, std::string_view keyword)
 {
-    if (!starts_with(line, keyword))
+    if (!startsWith(line, keyword))
     {
         return false;
     }
@@ -45,7 +47,7 @@ bool keyword_starts(std::string_view line, std::string_view keyword)
     return std::isspace(static_cast<unsigned char>(line[keyword.size()])) != 0;
 }
 
-std::string_view strip_trailing_semicolon(std::string_view view)
+std::string_view stripTrailingSemicolon(std::string_view view)
 {
     view = trim(view);
     if (!view.empty() && view.back() == ';')
@@ -59,16 +61,16 @@ std::string_view strip_trailing_semicolon(std::string_view view)
 
 ModuleParseResult ModuleParser::parse(std::string_view source, ModuleHeader& out)
 {
-    error_.clear();
+    _error.clear();
     out = ModuleHeader{};
-    out.body_offset = source.size();
+    out.BodyOffset = source.size();
 
-    bool seen_declaration = false;
+    bool seenDeclaration = false;
     std::size_t pos = 0;
 
     while (pos < source.size())
     {
-        const std::size_t line_start = pos;
+        const std::size_t lineStart = pos;
         const std::size_t newline = source.find('\n', pos);
         const std::size_t end = (newline == std::string_view::npos) ? source.size() : newline;
         std::string_view line = source.substr(pos, end - pos);
@@ -87,61 +89,61 @@ ModuleParseResult ModuleParser::parse(std::string_view source, ModuleHeader& out
             continue;
         }
 
-        if (keyword_starts(line, "export module"))
+        if (keywordStarts(line, "export module"))
         {
-            if (seen_declaration)
+            if (seenDeclaration)
             {
-                error_ = "duplicate 'export module' declaration";
+                _error = "duplicate 'export module' declaration";
                 return ModuleParseResult::Error;
             }
 
             const auto name =
-                strip_trailing_semicolon(line.substr(std::string_view("export module").size()));
+                stripTrailingSemicolon(line.substr(std::string_view("export module").size()));
             if (name.empty())
             {
-                error_ = "expected a module name after 'export module'";
+                _error = "expected a module name after 'export module'";
                 return ModuleParseResult::Error;
             }
 
-            out.name = std::string(name);
-            seen_declaration = true;
+            out.Name = std::string(name);
+            seenDeclaration = true;
             continue;
         }
 
-        if (!seen_declaration)
+        if (!seenDeclaration)
         {
-            error_ = "the file must start with 'export module Name;'";
+            _error = "the file must start with 'export module Name;'";
             return ModuleParseResult::Error;
         }
 
-        if (keyword_starts(line, "import"))
+        if (keywordStarts(line, "import"))
         {
             const auto name =
-                strip_trailing_semicolon(line.substr(std::string_view("import").size()));
+                stripTrailingSemicolon(line.substr(std::string_view("import").size()));
             if (name.empty())
             {
-                error_ = "expected a module name after 'import'";
+                _error = "expected a module name after 'import'";
                 return ModuleParseResult::Error;
             }
 
-            out.imports.emplace_back(name);
+            out.Imports.emplace_back(name);
             continue;
         }
 
-        if (starts_with(line, "#include"))
+        if (startsWith(line, "#include"))
         {
-            out.includes.emplace_back(line);
+            out.Includes.emplace_back(line);
             continue;
         }
 
         // The first statement that is neither an import nor an include begins the body.
-        out.body_offset = line_start;
+        out.BodyOffset = lineStart;
         break;
     }
 
-    if (!seen_declaration)
+    if (!seenDeclaration)
     {
-        error_ = "missing 'export module Name;' declaration";
+        _error = "missing 'export module Name;' declaration";
         return ModuleParseResult::Error;
     }
 

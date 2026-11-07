@@ -13,17 +13,17 @@ namespace xenon
 struct Expr
 {
     virtual ~Expr() = default;
-    int line = 0;
+    int Line = 0;
 };
 
 struct NumberExpr : Expr
 {
-    double value = 0.0;
+    double Value = 0.0;
 };
 
 struct BoolExpr : Expr
 {
-    bool value = false;
+    bool Value = false;
 };
 
 struct NullExpr : Expr
@@ -32,7 +32,7 @@ struct NullExpr : Expr
 
 struct VariableExpr : Expr
 {
-    std::string name;
+    std::string Name;
 };
 
 struct UnaryExpr : Expr
@@ -42,8 +42,8 @@ struct UnaryExpr : Expr
         Negate,
         Not,
     };
-    Op op = Op::Negate;
-    std::unique_ptr<Expr> operand;
+    Op Operation = Op::Negate;
+    std::unique_ptr<Expr> Operand;
 };
 
 struct BinaryExpr : Expr
@@ -63,21 +63,21 @@ struct BinaryExpr : Expr
         And,
         Or,
     };
-    Op op = Op::Add;
-    std::unique_ptr<Expr> left;
-    std::unique_ptr<Expr> right;
+    Op Operation = Op::Add;
+    std::unique_ptr<Expr> Left;
+    std::unique_ptr<Expr> Right;
 };
 
 struct AssignExpr : Expr
 {
-    std::string name;
-    std::unique_ptr<Expr> value;
+    std::string Name;
+    std::unique_ptr<Expr> Value;
 };
 
 struct CallExpr : Expr
 {
-    std::string callee;
-    std::vector<std::unique_ptr<Expr>> args;
+    std::string Callee;
+    std::vector<std::unique_ptr<Expr>> Args;
 };
 
 // ---- statements ----
@@ -85,58 +85,75 @@ struct CallExpr : Expr
 struct Stmt
 {
     virtual ~Stmt() = default;
-    int line = 0;
+    int Line = 0;
 };
 
 struct ExprStmt : Stmt
 {
-    std::unique_ptr<Expr> expr;
+    std::unique_ptr<Expr> Expr;
 };
 
 struct VarDeclStmt : Stmt
 {
-    std::string type;
-    std::string name;
-    std::unique_ptr<Expr> init; // may be null
+    std::string Type;
+    std::string Name;
+    std::unique_ptr<Expr> Init; // may be null
 };
 
 struct ReturnStmt : Stmt
 {
-    std::unique_ptr<Expr> value; // may be null (void)
+    std::unique_ptr<Expr> Value; // may be null (void)
 };
 
 struct BlockStmt : Stmt
 {
-    std::vector<std::unique_ptr<Stmt>> statements;
+    std::vector<std::unique_ptr<Stmt>> Statements;
 };
 
 struct IfStmt : Stmt
 {
-    std::unique_ptr<Expr> condition;
-    std::unique_ptr<Stmt> then_branch;
-    std::unique_ptr<Stmt> else_branch; // may be null
+    std::unique_ptr<Expr> Condition;
+    std::unique_ptr<Stmt> ThenBranch;
+    std::unique_ptr<Stmt> ElseBranch; // may be null
 };
 
 struct WhileStmt : Stmt
 {
-    std::unique_ptr<Expr> condition;
-    std::unique_ptr<Stmt> body;
+    std::unique_ptr<Expr> Condition;
+    std::unique_ptr<Stmt> Body;
 };
 
 // ---- top-level ----
 
 struct FunctionDecl
 {
-    std::string return_type; // empty means void
-    std::string name;
-    std::vector<std::pair<std::string, std::string>> params; // type, name
-    std::unique_ptr<BlockStmt> body;
-    bool exported = false;
+    std::string ReturnType; // empty means void
+    std::string Name;
+    std::vector<std::pair<std::string, std::string>> Params; // type, name
+    std::unique_ptr<BlockStmt> Body;                         // null for a prototype
+    bool Exported = false;
+    bool HasBody = true;
+};
+
+/// Kind of a declaration-only type (from `.hint` files or forward declarations).
+enum class DeclKind
+{
+    Struct,
+    Class,
+    Enum,
+};
+
+struct TypeDecl
+{
+    DeclKind Kind = DeclKind::Struct;
+    std::string Name;
+    std::string Signature;
 };
 
 struct Program
 {
-    std::vector<FunctionDecl> functions;
+    std::vector<FunctionDecl> Functions;
+    std::vector<TypeDecl> TypeDecls;
 };
 
 } // namespace xenon

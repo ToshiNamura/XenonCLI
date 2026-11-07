@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-#include "xenon/bytecode/chunk.hpp"
+#include "xenon/bytecode/xenon_binary.hpp"
 
 namespace xenon
 {
@@ -22,12 +22,13 @@ enum class SymbolKind : std::uint8_t
 /// A single packed symbol from a compiled module.
 struct Symbol
 {
-    std::string name; ///< Symbol name.
-    SymbolKind kind = SymbolKind::Variable;
-    std::string signature;  ///< Human-readable signature, e.g. `int add(int, int)`.
-    std::size_t arity = 0;  ///< `Function`: number of parameters.
-    std::size_t locals = 0; ///< `Function`: number of local slots beyond parameters.
-    Chunk body;             ///< Packed executable body; meaningful for `Function`.
+    std::string Name;             ///< Symbol name.
+    SymbolKind Kind = SymbolKind::Variable;
+    std::string Signature;        ///< Human-readable signature, e.g. `int add(int, int)`.
+    std::size_t Arity = 0;        ///< `Function`: number of parameters.
+    std::size_t Locals = 0;       ///< `Function`: local slots beyond parameters.
+    bool Defined = true;          ///< False for `.hint` declarations without a body.
+    XenonBinary Body;             ///< Packed executable body; meaningful for `Function`.
 };
 
 } // namespace xenon

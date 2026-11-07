@@ -25,3 +25,10 @@ add_executable(xenon_tests_lang
 target_link_libraries(xenon_tests_lang PRIVATE xenon::core)
 
 add_test(NAME xenon_tests_lang COMMAND xenon_tests_lang)
+
+add_executable(xenon_tests_hint
+    test_hint.cpp)
+
+target_link_libraries(xenon_tests_hint PRIVATE xenon::core)
+
+add_test(NAME xenon_tests_hint COMMAND xenon_tests_hint)

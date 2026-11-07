@@ -15,14 +15,14 @@ namespace xenon
 ///   ...body...               // code; `export` marks visible declarations
 struct ModuleHeader
 {
-    std::string name;                  ///< Module name from `export module Name;`.
-    std::vector<std::string> imports;  ///< Imported module dependencies, in order.
-    std::vector<std::string> includes; ///< Host `#include` directives, in order.
-    std::size_t body_offset = 0;       ///< Byte offset where the module body begins.
+    std::string Name;                  ///< Module name from `export module Name;`.
+    std::vector<std::string> Imports;  ///< Imported module dependencies, in order.
+    std::vector<std::string> Includes; ///< Host `#include` directives, in order.
+    std::size_t BodyOffset = 0;        ///< Byte offset where the module body begins.
 
     [[nodiscard]] bool empty() const noexcept
     {
-        return name.empty();
+        return Name.empty();
     }
 };
 

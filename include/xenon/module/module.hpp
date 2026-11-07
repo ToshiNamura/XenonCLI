@@ -15,16 +15,16 @@ namespace xenon
 /// the module (classes, functions, structs, templates, enums, variables).
 struct Module
 {
-    std::string name;                 ///< Module name.
-    std::vector<std::string> imports; ///< Module dependencies, in order.
-    std::vector<Symbol> symbols;      ///< Packed symbols, in declaration order.
+    std::string Name;                 ///< Module name.
+    std::vector<std::string> Imports; ///< Module dependencies, in order.
+    std::vector<Symbol> Symbols;      ///< Packed symbols, in declaration order.
 
     /// Returns the symbol with the given name, or `nullptr`.
-    [[nodiscard]] const Symbol* find(std::string_view symbol_name) const noexcept
+    [[nodiscard]] const Symbol* find(std::string_view symbolName) const noexcept
     {
-        for (const auto& symbol : symbols)
+        for (const auto& symbol : Symbols)
         {
-            if (symbol.name == symbol_name)
+            if (symbol.Name == symbolName)
             {
                 return &symbol;
             }

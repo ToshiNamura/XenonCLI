@@ -1,0 +1,19 @@
+// examples/math.hint
+// Внешние объявления: компилятор уверен, что эти символы
+// будут предоставлены на этапе выполнения.
+
+double sqrt(double x);
+double pow(double base, double exp);
+
+struct Point
+{
+    double x;
+    double y;
+};
+
+enum Color
+{
+    Red,
+    Green,
+    Blue,
+};

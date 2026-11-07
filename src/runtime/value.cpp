@@ -5,7 +5,7 @@
 namespace xenon
 {
 
-std::string to_string(const Value& value)
+std::string toString(const Value& value)
 {
     if (const auto* number = std::get_if<double>(&value))
     {

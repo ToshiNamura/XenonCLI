@@ -7,7 +7,7 @@
 
 #include "xenon/compiler/compiler.hpp"
 #include "xenon/module/module.hpp"
-#include "xenon/runtime/env.hpp"
+#include "xenon/runtime/runtime.hpp"
 
 namespace
 {
@@ -23,17 +23,17 @@ void check(bool condition, const std::string& message)
     }
 }
 
-xenon::Module compile_or_fail(const std::string& source, const std::string& what)
+xenon::Module compileOrFail(const std::string& source, const std::string& what)
 {
     using namespace xenon;
 
     Module module;
     Compiler compiler;
-    check(compiler.compile(source, module), what + " (compile failed): " + compiler.last_error());
+    check(compiler.compile(source, module), what + " (compile failed): " + compiler.lastError());
     return module;
 }
 
-void test_function_call()
+void testFunctionCall()
 {
     using namespace xenon;
 
@@ -51,17 +51,17 @@ double main()
 }
 )";
 
-    const auto module = compile_or_fail(source, "function call");
+    const auto module = compileOrFail(source, "function call");
 
-    Env env;
-    env.load(module);
-    check(env.run("main") == InterpretResult::Ok, "run('main') failed");
+    Runtime runtime;
+    runtime.addModule(module);
+    check(runtime.run("main") == InterpretResult::Ok, "run('main') failed");
 
-    const auto* number = std::get_if<double>(&env.last_value());
+    const auto* number = std::get_if<double>(&runtime.lastValue());
     check(number != nullptr && std::abs(*number - 4.0) < 1e-12, "main() result wrong");
 }
 
-void test_locals_and_control_flow()
+void testLocalsAndControlFlow()
 {
     using namespace xenon;
 
@@ -93,23 +93,23 @@ double classify(double x)
 }
 )";
 
-    const auto module = compile_or_fail(source, "control flow");
+    const auto module = compileOrFail(source, "control flow");
 
-    Env env;
-    env.load(module);
+    Runtime runtime;
+    runtime.addModule(module);
 
-    env.push(10.0);
-    check(env.run("sum_to") == InterpretResult::Ok, "run('sum_to') failed");
-    const auto* total = std::get_if<double>(&env.last_value());
+    runtime.push(10.0);
+    check(runtime.run("sum_to") == InterpretResult::Ok, "run('sum_to') failed");
+    const auto* total = std::get_if<double>(&runtime.lastValue());
     check(total != nullptr && std::abs(*total - 55.0) < 1e-12, "sum_to(10) wrong");
 
-    env.push(-5.0);
-    check(env.run("classify") == InterpretResult::Ok, "run('classify') failed");
-    const auto* cls = std::get_if<double>(&env.last_value());
+    runtime.push(-5.0);
+    check(runtime.run("classify") == InterpretResult::Ok, "run('classify') failed");
+    const auto* cls = std::get_if<double>(&runtime.lastValue());
     check(cls != nullptr && std::abs(*cls + 1.0) < 1e-12, "classify(-5) wrong");
 }
 
-void test_boolean_logic()
+void testBooleanLogic()
 {
     using namespace xenon;
 
@@ -126,23 +126,23 @@ bool test(double x)
 }
 )";
 
-    const auto module = compile_or_fail(source, "boolean logic");
+    const auto module = compileOrFail(source, "boolean logic");
 
-    Env env;
-    env.load(module);
+    Runtime runtime;
+    runtime.addModule(module);
 
-    env.push(5.0);
-    check(env.run("test") == InterpretResult::Ok, "run('test') failed");
-    check(std::get_if<bool>(&env.last_value()) != nullptr && std::get<bool>(env.last_value()),
+    runtime.push(5.0);
+    check(runtime.run("test") == InterpretResult::Ok, "run('test') failed");
+    check(std::get_if<bool>(&runtime.lastValue()) != nullptr && std::get<bool>(runtime.lastValue()),
           "test(5) should be true");
 
-    env.push(50.0);
-    check(env.run("test") == InterpretResult::Ok, "run('test') failed");
-    check(std::get_if<bool>(&env.last_value()) != nullptr && !std::get<bool>(env.last_value()),
+    runtime.push(50.0);
+    check(runtime.run("test") == InterpretResult::Ok, "run('test') failed");
+    check(std::get_if<bool>(&runtime.lastValue()) != nullptr && !std::get<bool>(runtime.lastValue()),
           "test(50) should be false");
 }
 
-void test_parse_error()
+void testParseError()
 {
     using namespace xenon;
 
@@ -166,10 +166,10 @@ int main()
 {
     try
     {
-        test_function_call();
-        test_locals_and_control_flow();
-        test_boolean_logic();
-        test_parse_error();
+        testFunctionCall();
+        testLocalsAndControlFlow();
+        testBooleanLogic();
+        testParseError();
     }
     catch (const std::exception& error)
     {

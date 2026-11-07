@@ -1,6 +1,7 @@
 #include "xenon/compiler/parser.hpp"
 
 #include <charconv>
+#include <memory>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -8,10 +9,10 @@
 namespace xenon
 {
 
-Parser::Parser(Lexer& lexer) : lexer_(lexer)
+Parser::Parser(Lexer& lexer) : _lexer(lexer)
 {
-    current_ = lexer_.next();
-    if (current_.type == TokenType::Invalid)
+    _current = _lexer.next();
+    if (_current.Type == TokenType::Invalid)
     {
         fail("unexpected character");
     }
@@ -19,24 +20,24 @@ Parser::Parser(Lexer& lexer) : lexer_(lexer)
 
 [[noreturn]] void Parser::fail(const std::string& message)
 {
-    error_ = message + " (line " + std::to_string(current_.line) + ")";
+    _error = message + " (line " + std::to_string(_current.Line) + ")";
     throw ParseError{};
 }
 
 const Token& Parser::advance()
 {
-    previous_ = current_;
-    current_ = lexer_.next();
-    if (current_.type == TokenType::Invalid)
+    _previous = _current;
+    _current = _lexer.next();
+    if (_current.Type == TokenType::Invalid)
     {
-        fail("unexpected character '" + std::string(current_.lexeme) + "'");
+        fail("unexpected character '" + std::string(_current.Lexeme) + "'");
     }
-    return previous_;
+    return _previous;
 }
 
 bool Parser::check(TokenType type) const
 {
-    return current_.type == type;
+    return _current.Type == type;
 }
 
 bool Parser::match(TokenType type)
@@ -58,14 +59,14 @@ const Token& Parser::consume(TokenType type, const std::string& message)
     fail(message);
 }
 
-bool Parser::check_keyword(std::string_view keyword) const
+bool Parser::checkKeyword(std::string_view keyword) const
 {
-    return current_.type == TokenType::Identifier && current_.lexeme == keyword;
+    return _current.Type == TokenType::Identifier && _current.Lexeme == keyword;
 }
 
-bool Parser::match_keyword(std::string_view keyword)
+bool Parser::matchKeyword(std::string_view keyword)
 {
-    if (!check_keyword(keyword))
+    if (!checkKeyword(keyword))
     {
         return false;
     }
@@ -73,21 +74,21 @@ bool Parser::match_keyword(std::string_view keyword)
     return true;
 }
 
-bool Parser::is_type(const Token& token) const
+bool Parser::isType(const Token& token) const
 {
-    if (token.type != TokenType::Identifier)
+    if (token.Type != TokenType::Identifier)
     {
         return false;
     }
-    return token.lexeme == "int" || token.lexeme == "double" || token.lexeme == "bool" ||
-           token.lexeme == "void";
+    return token.Lexeme == "int" || token.Lexeme == "double" || token.Lexeme == "bool" ||
+           token.Lexeme == "void";
 }
 
 bool Parser::parse(Program& out)
 {
     try
     {
-        parse_program(out);
+        parseProgram(out);
         return true;
     }
     catch (const ParseError&)
@@ -96,21 +97,28 @@ bool Parser::parse(Program& out)
     }
 }
 
-void Parser::parse_program(Program& out)
+void Parser::parseProgram(Program& out)
 {
     while (!check(TokenType::End))
     {
-        out.functions.push_back(parse_function());
+        if (checkKeyword("struct") || checkKeyword("class") || checkKeyword("enum"))
+        {
+            out.TypeDecls.push_back(parseTypeDecl());
+        }
+        else
+        {
+            out.Functions.push_back(parseFunction());
+        }
     }
 }
 
-FunctionDecl Parser::parse_function()
+FunctionDecl Parser::parseFunction()
 {
     FunctionDecl function;
-    function.exported = match_keyword("export");
+    function.Exported = matchKeyword("export");
 
-    function.return_type = parse_type();
-    function.name = std::string(consume(TokenType::Identifier, "expected a function name").lexeme);
+    function.ReturnType = parseType();
+    function.Name = std::string(consume(TokenType::Identifier, "expected a function name").Lexeme);
 
     consume(TokenType::LeftParen, "expected '(' after function name");
 
@@ -118,128 +126,175 @@ FunctionDecl Parser::parse_function()
     {
         do
         {
-            const std::string param_type = parse_type();
-            const std::string param_name =
-                std::string(consume(TokenType::Identifier, "expected a parameter name").lexeme);
-            function.params.emplace_back(param_type, param_name);
+            const std::string paramType = parseType();
+            const std::string paramName =
+                std::string(consume(TokenType::Identifier, "expected a parameter name").Lexeme);
+            function.Params.emplace_back(paramType, paramName);
         } while (match(TokenType::Comma));
     }
 
     consume(TokenType::RightParen, "expected ')' after parameters");
-    function.body = parse_block();
+
+    if (check(TokenType::LeftBrace))
+    {
+        function.HasBody = true;
+        function.Body = parseBlock();
+    }
+    else
+    {
+        function.HasBody = false;
+        consume(TokenType::Semicolon, "expected '{' or ';' after function signature");
+    }
     return function;
 }
 
-std::string Parser::parse_type()
+TypeDecl Parser::parseTypeDecl()
 {
-    if (!is_type(current_))
+    TypeDecl decl;
+    const std::string keyword = std::string(advance().Lexeme);
+
+    decl.Kind = keyword == "struct"  ? DeclKind::Struct
+                : keyword == "class" ? DeclKind::Class
+                                     : DeclKind::Enum;
+
+    decl.Name = std::string(consume(TokenType::Identifier, "expected a type name").Lexeme);
+
+    std::string signature = keyword + " " + decl.Name;
+    if (match(TokenType::LeftBrace))
+    {
+        int depth = 1;
+        while (depth > 0 && !check(TokenType::End))
+        {
+            if (match(TokenType::LeftBrace))
+            {
+                ++depth;
+            }
+            else if (match(TokenType::RightBrace))
+            {
+                --depth;
+            }
+            else
+            {
+                advance();
+            }
+        }
+        signature += " { ... }";
+    }
+    consume(TokenType::Semicolon, "expected ';' after declaration");
+    decl.Signature = signature;
+    return decl;
+}
+
+std::string Parser::parseType()
+{
+    if (!isType(_current))
     {
         fail("expected a type");
     }
-    const std::string type(current_.lexeme);
+    const std::string type(_current.Lexeme);
     advance();
     return type;
 }
 
-std::unique_ptr<BlockStmt> Parser::parse_block()
+std::unique_ptr<BlockStmt> Parser::parseBlock()
 {
     auto block = std::make_unique<BlockStmt>();
-    block->line = current_.line;
+    block->Line = _current.Line;
 
     consume(TokenType::LeftBrace, "expected '{'");
     while (!check(TokenType::RightBrace) && !check(TokenType::End))
     {
-        block->statements.push_back(parse_statement());
+        block->Statements.push_back(parseStatement());
     }
     consume(TokenType::RightBrace, "expected '}'");
     return block;
 }
 
-std::unique_ptr<Stmt> Parser::parse_statement()
+std::unique_ptr<Stmt> Parser::parseStatement()
 {
     if (check(TokenType::LeftBrace))
     {
-        return parse_block();
+        return parseBlock();
     }
 
-    if (match_keyword("return"))
+    if (matchKeyword("return"))
     {
         auto stmt = std::make_unique<ReturnStmt>();
-        stmt->line = previous_.line;
+        stmt->Line = _previous.Line;
         if (!check(TokenType::Semicolon))
         {
-            stmt->value = parse_expression();
+            stmt->Value = parseExpression();
         }
         consume(TokenType::Semicolon, "expected ';' after return");
         return stmt;
     }
 
-    if (match_keyword("if"))
+    if (matchKeyword("if"))
     {
         auto stmt = std::make_unique<IfStmt>();
-        stmt->line = previous_.line;
+        stmt->Line = _previous.Line;
         consume(TokenType::LeftParen, "expected '(' after 'if'");
-        stmt->condition = parse_expression();
+        stmt->Condition = parseExpression();
         consume(TokenType::RightParen, "expected ')' after condition");
-        stmt->then_branch = parse_statement();
-        if (match_keyword("else"))
+        stmt->ThenBranch = parseStatement();
+        if (matchKeyword("else"))
         {
-            stmt->else_branch = parse_statement();
+            stmt->ElseBranch = parseStatement();
         }
         return stmt;
     }
 
-    if (match_keyword("while"))
+    if (matchKeyword("while"))
     {
         auto stmt = std::make_unique<WhileStmt>();
-        stmt->line = previous_.line;
+        stmt->Line = _previous.Line;
         consume(TokenType::LeftParen, "expected '(' after 'while'");
-        stmt->condition = parse_expression();
+        stmt->Condition = parseExpression();
         consume(TokenType::RightParen, "expected ')' after condition");
-        stmt->body = parse_statement();
+        stmt->Body = parseStatement();
         return stmt;
     }
 
-    if (is_type(current_))
+    if (isType(_current))
     {
-        return parse_var_decl();
+        return parseVarDecl();
     }
 
     auto stmt = std::make_unique<ExprStmt>();
-    stmt->line = current_.line;
-    stmt->expr = parse_expression();
+    stmt->Line = _current.Line;
+    stmt->Expr = parseExpression();
     consume(TokenType::Semicolon, "expected ';' after expression");
     return stmt;
 }
 
-std::unique_ptr<Stmt> Parser::parse_var_decl()
+std::unique_ptr<Stmt> Parser::parseVarDecl()
 {
     auto stmt = std::make_unique<VarDeclStmt>();
-    stmt->line = current_.line;
+    stmt->Line = _current.Line;
 
-    stmt->type = parse_type();
-    if (stmt->type == "void")
+    stmt->Type = parseType();
+    if (stmt->Type == "void")
     {
         fail("'void' is not a valid variable type");
     }
-    stmt->name = std::string(consume(TokenType::Identifier, "expected a variable name").lexeme);
+    stmt->Name = std::string(consume(TokenType::Identifier, "expected a variable name").Lexeme);
 
     if (match(TokenType::Assign))
     {
-        stmt->init = parse_expression();
+        stmt->Init = parseExpression();
     }
     consume(TokenType::Semicolon, "expected ';' after variable declaration");
     return stmt;
 }
 
-std::unique_ptr<Expr> Parser::parse_expression()
+std::unique_ptr<Expr> Parser::parseExpression()
 {
-    return parse_assignment();
+    return parseAssignment();
 }
 
-std::unique_ptr<Expr> Parser::parse_assignment()
+std::unique_ptr<Expr> Parser::parseAssignment()
 {
-    auto expr = parse_or();
+    auto expr = parseOr();
 
     if (match(TokenType::Assign))
     {
@@ -249,76 +304,76 @@ std::unique_ptr<Expr> Parser::parse_assignment()
             fail("invalid assignment target");
         }
         auto assign = std::make_unique<AssignExpr>();
-        assign->line = previous_.line;
-        assign->name = std::move(variable->name);
-        assign->value = parse_assignment();
+        assign->Line = _previous.Line;
+        assign->Name = std::move(variable->Name);
+        assign->Value = parseAssignment();
         return assign;
     }
 
     return expr;
 }
 
-std::unique_ptr<Expr> Parser::parse_or()
+std::unique_ptr<Expr> Parser::parseOr()
 {
-    auto expr = parse_and();
+    auto expr = parseAnd();
 
     while (match(TokenType::OrOr))
     {
         auto binary = std::make_unique<BinaryExpr>();
-        binary->op = BinaryExpr::Op::Or;
-        binary->left = std::move(expr);
-        binary->right = parse_and();
-        binary->line = binary->right->line;
+        binary->Operation = BinaryExpr::Op::Or;
+        binary->Left = std::move(expr);
+        binary->Right = parseAnd();
+        binary->Line = binary->Right->Line;
         expr = std::move(binary);
     }
 
     return expr;
 }
 
-std::unique_ptr<Expr> Parser::parse_and()
+std::unique_ptr<Expr> Parser::parseAnd()
 {
-    auto expr = parse_equality();
+    auto expr = parseEquality();
 
     while (match(TokenType::AndAnd))
     {
         auto binary = std::make_unique<BinaryExpr>();
-        binary->op = BinaryExpr::Op::And;
-        binary->left = std::move(expr);
-        binary->right = parse_equality();
-        binary->line = binary->right->line;
+        binary->Operation = BinaryExpr::Op::And;
+        binary->Left = std::move(expr);
+        binary->Right = parseEquality();
+        binary->Line = binary->Right->Line;
         expr = std::move(binary);
     }
 
     return expr;
 }
 
-std::unique_ptr<Expr> Parser::parse_equality()
+std::unique_ptr<Expr> Parser::parseEquality()
 {
-    auto expr = parse_comparison();
+    auto expr = parseComparison();
 
     while (match(TokenType::EqualEqual) || match(TokenType::BangEqual))
     {
         auto binary = std::make_unique<BinaryExpr>();
-        binary->op = previous_.type == TokenType::EqualEqual ? BinaryExpr::Op::Equal
-                                                             : BinaryExpr::Op::NotEqual;
-        binary->left = std::move(expr);
-        binary->right = parse_comparison();
-        binary->line = binary->right->line;
+        binary->Operation = _previous.Type == TokenType::EqualEqual ? BinaryExpr::Op::Equal
+                                                                     : BinaryExpr::Op::NotEqual;
+        binary->Left = std::move(expr);
+        binary->Right = parseComparison();
+        binary->Line = binary->Right->Line;
         expr = std::move(binary);
     }
 
     return expr;
 }
 
-std::unique_ptr<Expr> Parser::parse_comparison()
+std::unique_ptr<Expr> Parser::parseComparison()
 {
-    auto expr = parse_term();
+    auto expr = parseTerm();
 
     while (match(TokenType::Less) || match(TokenType::LessEqual) || match(TokenType::Greater) ||
            match(TokenType::GreaterEqual))
     {
         BinaryExpr::Op op = BinaryExpr::Op::Less;
-        switch (previous_.type)
+        switch (_previous.Type)
         {
         case TokenType::Less:
             op = BinaryExpr::Op::Less;
@@ -335,76 +390,76 @@ std::unique_ptr<Expr> Parser::parse_comparison()
         }
 
         auto binary = std::make_unique<BinaryExpr>();
-        binary->op = op;
-        binary->left = std::move(expr);
-        binary->right = parse_term();
-        binary->line = binary->right->line;
+        binary->Operation = op;
+        binary->Left = std::move(expr);
+        binary->Right = parseTerm();
+        binary->Line = binary->Right->Line;
         expr = std::move(binary);
     }
 
     return expr;
 }
 
-std::unique_ptr<Expr> Parser::parse_term()
+std::unique_ptr<Expr> Parser::parseTerm()
 {
-    auto expr = parse_factor();
+    auto expr = parseFactor();
 
     while (match(TokenType::Plus) || match(TokenType::Minus))
     {
         auto binary = std::make_unique<BinaryExpr>();
-        binary->op =
-            previous_.type == TokenType::Plus ? BinaryExpr::Op::Add : BinaryExpr::Op::Subtract;
-        binary->left = std::move(expr);
-        binary->right = parse_factor();
-        binary->line = binary->right->line;
+        binary->Operation = _previous.Type == TokenType::Plus ? BinaryExpr::Op::Add
+                                                               : BinaryExpr::Op::Subtract;
+        binary->Left = std::move(expr);
+        binary->Right = parseFactor();
+        binary->Line = binary->Right->Line;
         expr = std::move(binary);
     }
 
     return expr;
 }
 
-std::unique_ptr<Expr> Parser::parse_factor()
+std::unique_ptr<Expr> Parser::parseFactor()
 {
-    auto expr = parse_unary();
+    auto expr = parseUnary();
 
     while (match(TokenType::Star) || match(TokenType::Slash))
     {
         auto binary = std::make_unique<BinaryExpr>();
-        binary->op =
-            previous_.type == TokenType::Star ? BinaryExpr::Op::Multiply : BinaryExpr::Op::Divide;
-        binary->left = std::move(expr);
-        binary->right = parse_unary();
-        binary->line = binary->right->line;
+        binary->Operation = _previous.Type == TokenType::Star ? BinaryExpr::Op::Multiply
+                                                               : BinaryExpr::Op::Divide;
+        binary->Left = std::move(expr);
+        binary->Right = parseUnary();
+        binary->Line = binary->Right->Line;
         expr = std::move(binary);
     }
 
     return expr;
 }
 
-std::unique_ptr<Expr> Parser::parse_unary()
+std::unique_ptr<Expr> Parser::parseUnary()
 {
     if (match(TokenType::Minus))
     {
         auto unary = std::make_unique<UnaryExpr>();
-        unary->op = UnaryExpr::Op::Negate;
-        unary->line = previous_.line;
-        unary->operand = parse_unary();
+        unary->Operation = UnaryExpr::Op::Negate;
+        unary->Line = _previous.Line;
+        unary->Operand = parseUnary();
         return unary;
     }
     if (match(TokenType::Bang))
     {
         auto unary = std::make_unique<UnaryExpr>();
-        unary->op = UnaryExpr::Op::Not;
-        unary->line = previous_.line;
-        unary->operand = parse_unary();
+        unary->Operation = UnaryExpr::Op::Not;
+        unary->Line = _previous.Line;
+        unary->Operand = parseUnary();
         return unary;
     }
-    return parse_call();
+    return parseCall();
 }
 
-std::unique_ptr<Expr> Parser::parse_call()
+std::unique_ptr<Expr> Parser::parseCall()
 {
-    auto expr = parse_primary();
+    auto expr = parsePrimary();
 
     while (match(TokenType::LeftParen))
     {
@@ -415,14 +470,14 @@ std::unique_ptr<Expr> Parser::parse_call()
         }
 
         auto call = std::make_unique<CallExpr>();
-        call->callee = std::move(variable->name);
-        call->line = previous_.line;
+        call->Callee = std::move(variable->Name);
+        call->Line = _previous.Line;
 
         if (!check(TokenType::RightParen))
         {
             do
             {
-                call->args.push_back(parse_expression());
+                call->Args.push_back(parseExpression());
             } while (match(TokenType::Comma));
         }
         consume(TokenType::RightParen, "expected ')' after arguments");
@@ -433,21 +488,21 @@ std::unique_ptr<Expr> Parser::parse_call()
     return expr;
 }
 
-std::unique_ptr<Expr> Parser::parse_primary()
+std::unique_ptr<Expr> Parser::parsePrimary()
 {
     if (match(TokenType::Number))
     {
         auto expr = std::make_unique<NumberExpr>();
-        expr->line = previous_.line;
+        expr->Line = _previous.Line;
 
         double value = 0.0;
         const auto result = std::from_chars(
-            previous_.lexeme.data(), previous_.lexeme.data() + previous_.lexeme.size(), value);
+            _previous.Lexeme.data(), _previous.Lexeme.data() + _previous.Lexeme.size(), value);
         if (result.ec != std::errc())
         {
             fail("invalid number literal");
         }
-        expr->value = value;
+        expr->Value = value;
         return expr;
     }
 
@@ -456,40 +511,40 @@ std::unique_ptr<Expr> Parser::parse_primary()
         fail("string literals are not supported yet");
     }
 
-    if (match_keyword("true"))
+    if (matchKeyword("true"))
     {
         auto expr = std::make_unique<BoolExpr>();
-        expr->value = true;
-        expr->line = previous_.line;
+        expr->Value = true;
+        expr->Line = _previous.Line;
         return expr;
     }
 
-    if (match_keyword("false"))
+    if (matchKeyword("false"))
     {
         auto expr = std::make_unique<BoolExpr>();
-        expr->value = false;
-        expr->line = previous_.line;
+        expr->Value = false;
+        expr->Line = _previous.Line;
         return expr;
     }
 
-    if (match_keyword("null"))
+    if (matchKeyword("null"))
     {
         auto expr = std::make_unique<NullExpr>();
-        expr->line = previous_.line;
+        expr->Line = _previous.Line;
         return expr;
     }
 
     if (match(TokenType::Identifier))
     {
         auto expr = std::make_unique<VariableExpr>();
-        expr->name = std::string(previous_.lexeme);
-        expr->line = previous_.line;
+        expr->Name = std::string(_previous.Lexeme);
+        expr->Line = _previous.Line;
         return expr;
     }
 
     if (match(TokenType::LeftParen))
     {
-        auto expr = parse_expression();
+        auto expr = parseExpression();
         consume(TokenType::RightParen, "expected ')' after expression");
         return expr;
     }

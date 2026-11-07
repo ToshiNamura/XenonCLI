@@ -3,7 +3,7 @@
 namespace xenon
 {
 
-const char* opcode_name(OpCode op)
+const char* opcodeName(OpCode op)
 {
     switch (op)
     {

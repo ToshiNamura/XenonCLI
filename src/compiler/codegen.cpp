@@ -1,7 +1,9 @@
 #include "xenon/compiler/codegen.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 
 #include "xenon/bytecode/opcode.hpp"
@@ -10,30 +12,47 @@
 namespace xenon
 {
 
-CodeGenerator::CodeGenerator(const Program& program) : program_(program)
+CodeGenerator::CodeGenerator(const Program& program, const Module& hints)
+    : _program(program), _hints(hints)
 {
-    for (std::size_t i = 0; i < program_.functions.size(); ++i)
+    std::size_t index = 0;
+    for (const auto& function : _program.Functions)
     {
-        function_indices_[program_.functions[i].name] = i;
+        _functionIndices[function.Name] = index++;
+    }
+    for (const auto& symbol : _hints.Symbols)
+    {
+        if (symbol.Kind == SymbolKind::Function)
+        {
+            _functionIndices[symbol.Name] = index++;
+        }
     }
 }
 
 [[noreturn]] void CodeGenerator::fail(const std::string& message)
 {
-    error_ = message;
+    _error = message;
     throw CodeGenError{};
 }
 
 bool CodeGenerator::generate(Module& out)
 {
-    error_.clear();
-    out.symbols.clear();
+    _error.clear();
+    out.Symbols.clear();
 
     try
     {
-        for (const auto& function : program_.functions)
+        for (const auto& function : _program.Functions)
         {
-            compile_function(function, out);
+            compileFunction(function, out);
+        }
+        for (const auto& decl : _program.TypeDecls)
+        {
+            compileTypeDecl(decl, out);
+        }
+        for (const auto& symbol : _hints.Symbols)
+        {
+            out.Symbols.push_back(symbol);
         }
         return true;
     }
@@ -43,69 +62,88 @@ bool CodeGenerator::generate(Module& out)
     }
 }
 
-void CodeGenerator::compile_function(const FunctionDecl& function, Module& out)
+void CodeGenerator::compileFunction(const FunctionDecl& function, Module& out)
 {
     Symbol symbol;
-    symbol.name = function.name;
-    symbol.kind = SymbolKind::Function;
-    symbol.signature = function.return_type.empty() ? "void " : function.return_type + " ";
-    symbol.signature += function.name;
-    symbol.signature += "(";
-    for (std::size_t i = 0; i < function.params.size(); ++i)
+    symbol.Name = function.Name;
+    symbol.Kind = SymbolKind::Function;
+    symbol.Signature = function.ReturnType.empty() ? "void " : function.ReturnType + " ";
+    symbol.Signature += function.Name;
+    symbol.Signature += "(";
+    for (std::size_t i = 0; i < function.Params.size(); ++i)
     {
         if (i != 0)
         {
-            symbol.signature += ", ";
+            symbol.Signature += ", ";
         }
-        symbol.signature += function.params[i].first;
+        symbol.Signature += function.Params[i].first;
     }
-    symbol.signature += ")";
-    symbol.arity = function.params.size();
+    symbol.Signature += ")";
+    symbol.Arity = function.Params.size();
+    symbol.Defined = function.HasBody;
 
-    chunk_ = &symbol.body;
-    scopes_.clear();
-    slot_counter_ = 0;
-    max_slots_ = 0;
-
-    enter_scope();
-    for (const auto& param : function.params)
+    if (!function.HasBody)
     {
-        declare_local(param.second);
+        out.Symbols.push_back(std::move(symbol));
+        return;
     }
-    compile_block(*function.body);
 
-    emit_constant(Null{});
-    emit_opcode(OpCode::Return);
+    _binary = &symbol.Body;
+    _scopes.clear();
+    _slotCounter = 0;
+    _maxSlots = 0;
 
-    symbol.locals = max_slots_ > symbol.arity ? max_slots_ - symbol.arity : 0;
-    out.symbols.push_back(std::move(symbol));
-    chunk_ = nullptr;
-}
-
-void CodeGenerator::enter_scope()
-{
-    scopes_.push_back(Scope{{}, slot_counter_});
-}
-
-void CodeGenerator::leave_scope()
-{
-    slot_counter_ = scopes_.back().base_slot;
-    scopes_.pop_back();
-}
-
-void CodeGenerator::declare_local(const std::string& name)
-{
-    scopes_.back().names[name] = slot_counter_;
-    ++slot_counter_;
-    max_slots_ = std::max(max_slots_, slot_counter_);
-}
-
-std::size_t CodeGenerator::resolve_local(const std::string& name)
-{
-    for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it)
+    enterScope();
+    for (const auto& param : function.Params)
     {
-        const auto found = it->names.find(name);
-        if (found != it->names.end())
+        declareLocal(param.second);
+    }
+    compileBlock(*function.Body);
+
+    emitConstant(Null{});
+    emitOpcode(OpCode::Return);
+
+    symbol.Locals = _maxSlots > symbol.Arity ? _maxSlots - symbol.Arity : 0;
+    out.Symbols.push_back(std::move(symbol));
+    _binary = nullptr;
+}
+
+void CodeGenerator::compileTypeDecl(const TypeDecl& decl, Module& out)
+{
+    Symbol symbol;
+    symbol.Name = decl.Name;
+    symbol.Kind = decl.Kind == DeclKind::Struct  ? SymbolKind::Struct
+                  : decl.Kind == DeclKind::Class ? SymbolKind::Class
+                                                 : SymbolKind::Enum;
+    symbol.Signature = decl.Signature;
+    symbol.Defined = false;
+    out.Symbols.push_back(std::move(symbol));
+}
+
+void CodeGenerator::enterScope()
+{
+    _scopes.push_back(Scope{{}, _slotCounter});
+}
+
+void CodeGenerator::leaveScope()
+{
+    _slotCounter = _scopes.back().BaseSlot;
+    _scopes.pop_back();
+}
+
+void CodeGenerator::declareLocal(const std::string& name)
+{
+    _scopes.back().Names[name] = _slotCounter;
+    ++_slotCounter;
+    _maxSlots = std::max(_maxSlots, _slotCounter);
+}
+
+std::size_t CodeGenerator::resolveLocal(const std::string& name)
+{
+    for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it)
+    {
+        const auto found = it->Names.find(name);
+        if (found != it->Names.end())
         {
             return found->second;
         }
@@ -113,74 +151,74 @@ std::size_t CodeGenerator::resolve_local(const std::string& name)
     fail("undefined variable: " + name);
 }
 
-void CodeGenerator::compile_block(const BlockStmt& block)
+void CodeGenerator::compileBlock(const BlockStmt& block)
 {
-    enter_scope();
-    for (const auto& statement : block.statements)
+    enterScope();
+    for (const auto& statement : block.Statements)
     {
-        compile_statement(*statement);
+        compileStatement(*statement);
     }
-    leave_scope();
+    leaveScope();
 }
 
-void CodeGenerator::compile_statement(const Stmt& stmt)
+void CodeGenerator::compileStatement(const Stmt& stmt)
 {
     if (const auto* e = dynamic_cast<const ExprStmt*>(&stmt))
     {
-        compile_expression(*e->expr);
-        emit_opcode(OpCode::Pop);
+        compileExpression(*e->Expr);
+        emitOpcode(OpCode::Pop);
     }
     else if (const auto* v = dynamic_cast<const VarDeclStmt*>(&stmt))
     {
-        if (v->init)
+        if (v->Init)
         {
-            compile_expression(*v->init);
+            compileExpression(*v->Init);
         }
-        declare_local(v->name);
-        if (v->init)
+        declareLocal(v->Name);
+        if (v->Init)
         {
-            emit_opcode(OpCode::StoreLocal);
-            emit_byte(static_cast<std::uint8_t>(resolve_local(v->name)));
+            emitOpcode(OpCode::StoreLocal);
+            emitByte(static_cast<std::uint8_t>(resolveLocal(v->Name)));
         }
     }
     else if (const auto* r = dynamic_cast<const ReturnStmt*>(&stmt))
     {
-        if (r->value)
+        if (r->Value)
         {
-            compile_expression(*r->value);
+            compileExpression(*r->Value);
         }
         else
         {
-            emit_constant(Null{});
+            emitConstant(Null{});
         }
-        emit_opcode(OpCode::Return);
+        emitOpcode(OpCode::Return);
     }
     else if (const auto* b = dynamic_cast<const BlockStmt*>(&stmt))
     {
-        compile_block(*b);
+        compileBlock(*b);
     }
     else if (const auto* i = dynamic_cast<const IfStmt*>(&stmt))
     {
-        compile_expression(*i->condition);
-        const auto else_jump = emit_jump(OpCode::JumpIfFalse);
-        compile_statement(*i->then_branch);
-        const auto end_jump = emit_jump(OpCode::Jump);
-        patch_jump(else_jump, chunk_->code_position());
-        if (i->else_branch)
+        compileExpression(*i->Condition);
+        const auto elseJump = emitJump(OpCode::JumpIfFalse);
+        compileStatement(*i->ThenBranch);
+        const auto endJump = emitJump(OpCode::Jump);
+        patchJump(elseJump, _binary->codePosition());
+        if (i->ElseBranch)
         {
-            compile_statement(*i->else_branch);
+            compileStatement(*i->ElseBranch);
         }
-        patch_jump(end_jump, chunk_->code_position());
+        patchJump(endJump, _binary->codePosition());
     }
     else if (const auto* w = dynamic_cast<const WhileStmt*>(&stmt))
     {
-        const auto loop_start = chunk_->code_position();
-        compile_expression(*w->condition);
-        const auto exit_jump = emit_jump(OpCode::JumpIfFalse);
-        compile_statement(*w->body);
-        const auto back_jump = emit_jump(OpCode::Jump);
-        patch_jump(back_jump, loop_start);
-        patch_jump(exit_jump, chunk_->code_position());
+        const auto loopStart = _binary->codePosition();
+        compileExpression(*w->Condition);
+        const auto exitJump = emitJump(OpCode::JumpIfFalse);
+        compileStatement(*w->Body);
+        const auto backJump = emitJump(OpCode::Jump);
+        patchJump(backJump, loopStart);
+        patchJump(exitJump, _binary->codePosition());
     }
     else
     {
@@ -188,118 +226,118 @@ void CodeGenerator::compile_statement(const Stmt& stmt)
     }
 }
 
-void CodeGenerator::compile_expression(const Expr& expr)
+void CodeGenerator::compileExpression(const Expr& expr)
 {
     if (const auto* n = dynamic_cast<const NumberExpr*>(&expr))
     {
-        emit_constant(n->value);
+        emitConstant(n->Value);
         return;
     }
     if (const auto* b = dynamic_cast<const BoolExpr*>(&expr))
     {
-        emit_constant(b->value);
+        emitConstant(b->Value);
         return;
     }
     if (dynamic_cast<const NullExpr*>(&expr) != nullptr)
     {
-        emit_constant(Null{});
+        emitConstant(Null{});
         return;
     }
     if (const auto* v = dynamic_cast<const VariableExpr*>(&expr))
     {
-        emit_opcode(OpCode::LoadLocal);
-        emit_byte(static_cast<std::uint8_t>(resolve_local(v->name)));
+        emitOpcode(OpCode::LoadLocal);
+        emitByte(static_cast<std::uint8_t>(resolveLocal(v->Name)));
         return;
     }
     if (const auto* u = dynamic_cast<const UnaryExpr*>(&expr))
     {
-        compile_expression(*u->operand);
-        emit_opcode(u->op == UnaryExpr::Op::Negate ? OpCode::Negate : OpCode::Not);
+        compileExpression(*u->Operand);
+        emitOpcode(u->Operation == UnaryExpr::Op::Negate ? OpCode::Negate : OpCode::Not);
         return;
     }
     if (const auto* a = dynamic_cast<const AssignExpr*>(&expr))
     {
-        compile_expression(*a->value);
-        const auto slot = resolve_local(a->name);
-        emit_opcode(OpCode::StoreLocal);
-        emit_byte(static_cast<std::uint8_t>(slot));
-        emit_opcode(OpCode::LoadLocal);
-        emit_byte(static_cast<std::uint8_t>(slot));
+        compileExpression(*a->Value);
+        const auto slot = resolveLocal(a->Name);
+        emitOpcode(OpCode::StoreLocal);
+        emitByte(static_cast<std::uint8_t>(slot));
+        emitOpcode(OpCode::LoadLocal);
+        emitByte(static_cast<std::uint8_t>(slot));
         return;
     }
     if (const auto* c = dynamic_cast<const CallExpr*>(&expr))
     {
-        for (const auto& arg : c->args)
+        for (const auto& arg : c->Args)
         {
-            compile_expression(*arg);
+            compileExpression(*arg);
         }
-        const auto it = function_indices_.find(c->callee);
-        if (it == function_indices_.end())
+        const auto it = _functionIndices.find(c->Callee);
+        if (it == _functionIndices.end())
         {
-            fail("unknown function: " + c->callee);
+            fail("unknown function: " + c->Callee);
         }
-        emit_opcode(OpCode::Call);
-        emit_byte(static_cast<std::uint8_t>(it->second));
+        emitOpcode(OpCode::Call);
+        emitByte(static_cast<std::uint8_t>(it->second));
         return;
     }
     if (const auto* bin = dynamic_cast<const BinaryExpr*>(&expr))
     {
-        if (bin->op == BinaryExpr::Op::And)
+        if (bin->Operation == BinaryExpr::Op::And)
         {
-            compile_expression(*bin->left);
-            const auto false_jump = emit_jump(OpCode::JumpIfFalse);
-            compile_expression(*bin->right);
-            const auto end_jump = emit_jump(OpCode::Jump);
-            patch_jump(false_jump, chunk_->code_position());
-            emit_constant(false);
-            patch_jump(end_jump, chunk_->code_position());
+            compileExpression(*bin->Left);
+            const auto falseJump = emitJump(OpCode::JumpIfFalse);
+            compileExpression(*bin->Right);
+            const auto endJump = emitJump(OpCode::Jump);
+            patchJump(falseJump, _binary->codePosition());
+            emitConstant(false);
+            patchJump(endJump, _binary->codePosition());
             return;
         }
-        if (bin->op == BinaryExpr::Op::Or)
+        if (bin->Operation == BinaryExpr::Op::Or)
         {
-            compile_expression(*bin->left);
-            const auto eval_right = emit_jump(OpCode::JumpIfFalse);
-            emit_constant(true);
-            const auto end_jump = emit_jump(OpCode::Jump);
-            patch_jump(eval_right, chunk_->code_position());
-            compile_expression(*bin->right);
-            patch_jump(end_jump, chunk_->code_position());
+            compileExpression(*bin->Left);
+            const auto evalRight = emitJump(OpCode::JumpIfFalse);
+            emitConstant(true);
+            const auto endJump = emitJump(OpCode::Jump);
+            patchJump(evalRight, _binary->codePosition());
+            compileExpression(*bin->Right);
+            patchJump(endJump, _binary->codePosition());
             return;
         }
 
-        compile_expression(*bin->left);
-        compile_expression(*bin->right);
-        switch (bin->op)
+        compileExpression(*bin->Left);
+        compileExpression(*bin->Right);
+        switch (bin->Operation)
         {
         case BinaryExpr::Op::Add:
-            emit_opcode(OpCode::Add);
+            emitOpcode(OpCode::Add);
             break;
         case BinaryExpr::Op::Subtract:
-            emit_opcode(OpCode::Subtract);
+            emitOpcode(OpCode::Subtract);
             break;
         case BinaryExpr::Op::Multiply:
-            emit_opcode(OpCode::Multiply);
+            emitOpcode(OpCode::Multiply);
             break;
         case BinaryExpr::Op::Divide:
-            emit_opcode(OpCode::Divide);
+            emitOpcode(OpCode::Divide);
             break;
         case BinaryExpr::Op::Equal:
-            emit_opcode(OpCode::Equal);
+            emitOpcode(OpCode::Equal);
             break;
         case BinaryExpr::Op::NotEqual:
-            emit_opcode(OpCode::NotEqual);
+            emitOpcode(OpCode::NotEqual);
             break;
         case BinaryExpr::Op::Less:
-            emit_opcode(OpCode::Less);
+            emitOpcode(OpCode::Less);
             break;
         case BinaryExpr::Op::LessEqual:
-            emit_opcode(OpCode::LessEqual);
+            emitOpcode(OpCode::LessEqual);
             break;
         case BinaryExpr::Op::Greater:
-            emit_opcode(OpCode::Greater);
+            emitOpcode(OpCode::Greater);
             break;
         case BinaryExpr::Op::GreaterEqual:
-            emit_opcode(OpCode::GreaterEqual);
+            emitOpcode(OpCode::GreaterEqual);
             break;
         default:
             fail("unsupported binary operator");
@@ -309,41 +347,41 @@ void CodeGenerator::compile_expression(const Expr& expr)
     fail("unknown expression");
 }
 
-void CodeGenerator::emit_opcode(OpCode op)
+void CodeGenerator::emitOpcode(OpCode op)
 {
-    chunk_->write(op, 0);
+    _binary->write(op, 0);
 }
 
-void CodeGenerator::emit_byte(std::uint8_t byte)
+void CodeGenerator::emitByte(std::uint8_t byte)
 {
-    chunk_->write(byte, 0);
+    _binary->write(byte, 0);
 }
 
-void CodeGenerator::emit_u16(std::uint16_t value)
+void CodeGenerator::emitU16(std::uint16_t value)
 {
-    emit_byte(static_cast<std::uint8_t>(value & 0xff));
-    emit_byte(static_cast<std::uint8_t>((value >> 8) & 0xff));
+    emitByte(static_cast<std::uint8_t>(value & 0xff));
+    emitByte(static_cast<std::uint8_t>((value >> 8) & 0xff));
 }
 
-std::size_t CodeGenerator::emit_jump(OpCode op)
+std::size_t CodeGenerator::emitJump(OpCode op)
 {
-    emit_opcode(op);
-    const auto offset = chunk_->code_position();
-    emit_u16(0);
+    emitOpcode(op);
+    const auto offset = _binary->codePosition();
+    emitU16(0);
     return offset;
 }
 
-void CodeGenerator::patch_jump(std::size_t operand_offset, std::size_t target)
+void CodeGenerator::patchJump(std::size_t operandOffset, std::size_t target)
 {
-    const auto relative = static_cast<std::int16_t>(target - (operand_offset + 2));
-    chunk_->patch_u16(operand_offset, static_cast<std::uint16_t>(relative));
+    const auto relative = static_cast<std::int16_t>(target - (operandOffset + 2));
+    _binary->patchU16(operandOffset, static_cast<std::uint16_t>(relative));
 }
 
-void CodeGenerator::emit_constant(Value value)
+void CodeGenerator::emitConstant(Value value)
 {
-    const auto index = chunk_->add_constant(std::move(value));
-    emit_opcode(OpCode::Constant);
-    emit_byte(static_cast<std::uint8_t>(index));
+    const auto index = _binary->addConstant(std::move(value));
+    emitOpcode(OpCode::Constant);
+    emitByte(static_cast<std::uint8_t>(index));
 }
 
 } // namespace xenon

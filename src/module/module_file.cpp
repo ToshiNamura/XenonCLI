@@ -16,20 +16,20 @@ namespace xenon
 namespace
 {
 
-constexpr char k_magic[4] = {'X', 'E', 'N', 'M'};
-constexpr std::uint32_t k_version = 1;
+constexpr char Magic[4] = {'X', 'E', 'N', 'M'};
+constexpr std::uint32_t Version = 1;
 
-constexpr std::uint32_t k_max_count = 1u << 22;
+constexpr std::uint32_t MaxCount = 1u << 22;
 
-void check_count(std::uint32_t count)
+void checkCount(std::uint32_t count)
 {
-    if (count > k_max_count)
+    if (count > MaxCount)
     {
         throw ModuleFileError("malformed module file (count too large)");
     }
 }
 
-void write_u32(std::ostream& os, std::uint32_t value)
+void writeU32(std::ostream& os, std::uint32_t value)
 {
     const char bytes[4] = {
         static_cast<char>(value & 0xff),
@@ -40,7 +40,7 @@ void write_u32(std::ostream& os, std::uint32_t value)
     os.write(bytes, 4);
 }
 
-void write_u64(std::ostream& os, std::uint64_t value)
+void writeU64(std::ostream& os, std::uint64_t value)
 {
     const char bytes[8] = {
         static_cast<char>(value & 0xff),         static_cast<char>((value >> 8) & 0xff),
@@ -51,21 +51,21 @@ void write_u64(std::ostream& os, std::uint64_t value)
     os.write(bytes, 8);
 }
 
-void write_i32(std::ostream& os, std::int32_t value)
+void writeI32(std::ostream& os, std::int32_t value)
 {
-    write_u32(os, static_cast<std::uint32_t>(value));
+    writeU32(os, static_cast<std::uint32_t>(value));
 }
 
-void write_string(std::ostream& os, std::string_view value)
+void writeString(std::ostream& os, std::string_view value)
 {
-    write_u32(os, static_cast<std::uint32_t>(value.size()));
+    writeU32(os, static_cast<std::uint32_t>(value.size()));
     if (!value.empty())
     {
         os.write(value.data(), static_cast<std::streamsize>(value.size()));
     }
 }
 
-void write_value(std::ostream& os, const Value& value)
+void writeValue(std::ostream& os, const Value& value)
 {
     if (const auto* boolean = std::get_if<bool>(&value))
     {
@@ -78,44 +78,44 @@ void write_value(std::ostream& os, const Value& value)
         os.put(2);
         std::uint64_t bits = 0;
         std::memcpy(&bits, number, sizeof bits);
-        write_u64(os, bits);
+        writeU64(os, bits);
         return;
     }
     if (const auto* ref = std::get_if<Ref>(&value))
     {
         os.put(3);
-        write_u32(os, ref->id);
+        writeU32(os, ref->id);
         return;
     }
     os.put(0); // Null
 }
 
-void write_chunk(std::ostream& os, const Chunk& chunk)
+void writeBinary(std::ostream& os, const XenonBinary& binary)
 {
-    const auto& code = chunk.code();
-    write_u32(os, static_cast<std::uint32_t>(code.size()));
+    const auto& code = binary.code();
+    writeU32(os, static_cast<std::uint32_t>(code.size()));
     if (!code.empty())
     {
         os.write(reinterpret_cast<const char*>(code.data()),
                  static_cast<std::streamsize>(code.size()));
     }
 
-    const auto& constants = chunk.constants();
-    write_u32(os, static_cast<std::uint32_t>(constants.size()));
+    const auto& constants = binary.constants();
+    writeU32(os, static_cast<std::uint32_t>(constants.size()));
     for (const auto& constant : constants)
     {
-        write_value(os, constant);
+        writeValue(os, constant);
     }
 
-    const auto& lines = chunk.lines();
-    write_u32(os, static_cast<std::uint32_t>(lines.size()));
+    const auto& lines = binary.lines();
+    writeU32(os, static_cast<std::uint32_t>(lines.size()));
     for (const int line : lines)
     {
-        write_i32(os, line);
+        writeI32(os, line);
     }
 }
 
-std::uint32_t read_u32(std::istream& is)
+std::uint32_t readU32(std::istream& is)
 {
     char bytes[4] = {};
     is.read(bytes, 4);
@@ -129,7 +129,7 @@ std::uint32_t read_u32(std::istream& is)
            (static_cast<std::uint32_t>(static_cast<std::uint8_t>(bytes[3])) << 24);
 }
 
-std::uint64_t read_u64(std::istream& is)
+std::uint64_t readU64(std::istream& is)
 {
     char bytes[8] = {};
     is.read(bytes, 8);
@@ -145,15 +145,15 @@ std::uint64_t read_u64(std::istream& is)
     return value;
 }
 
-std::int32_t read_i32(std::istream& is)
+std::int32_t readI32(std::istream& is)
 {
-    return static_cast<std::int32_t>(read_u32(is));
+    return static_cast<std::int32_t>(readU32(is));
 }
 
-std::string read_string(std::istream& is)
+std::string readString(std::istream& is)
 {
-    const auto length = read_u32(is);
-    check_count(length);
+    const auto length = readU32(is);
+    checkCount(length);
     std::string value(length, '\0');
     if (length != 0)
     {
@@ -166,7 +166,7 @@ std::string read_string(std::istream& is)
     return value;
 }
 
-Value read_value(std::istream& is)
+Value readValue(std::istream& is)
 {
     const int tag = is.get();
     switch (tag)
@@ -184,114 +184,115 @@ Value read_value(std::istream& is)
     }
     case 2:
     {
-        const auto bits = read_u64(is);
+        const auto bits = readU64(is);
         double number = 0.0;
         std::memcpy(&number, &bits, sizeof number);
         return Value{number};
     }
     case 3:
-        return Value{Ref{read_u32(is)}};
+        return Value{Ref{readU32(is)}};
     default:
         throw ModuleFileError("unknown value tag in module file");
     }
 }
 
-Chunk read_chunk(std::istream& is)
+XenonBinary readBinary(std::istream& is)
 {
-    Chunk chunk;
+    XenonBinary binary;
 
-    const auto code_size = read_u32(is);
-    check_count(code_size);
-    std::vector<std::uint8_t> code(code_size);
-    if (code_size != 0)
+    const auto codeSize = readU32(is);
+    checkCount(codeSize);
+    std::vector<std::uint8_t> code(codeSize);
+    if (codeSize != 0)
     {
-        is.read(reinterpret_cast<char*>(code.data()), static_cast<std::streamsize>(code_size));
-        if (is.gcount() != static_cast<std::streamsize>(code_size))
+        is.read(reinterpret_cast<char*>(code.data()), static_cast<std::streamsize>(codeSize));
+        if (is.gcount() != static_cast<std::streamsize>(codeSize))
         {
             throw ModuleFileError("truncated module file");
         }
     }
 
-    const auto constant_count = read_u32(is);
-    check_count(constant_count);
-    for (std::uint32_t i = 0; i < constant_count; ++i)
+    const auto constantCount = readU32(is);
+    checkCount(constantCount);
+    for (std::uint32_t i = 0; i < constantCount; ++i)
     {
-        (void)chunk.add_constant(read_value(is));
+        (void)binary.addConstant(readValue(is));
     }
 
-    const auto line_count = read_u32(is);
-    check_count(line_count);
-    std::vector<int> lines(line_count);
-    for (std::uint32_t i = 0; i < line_count; ++i)
+    const auto lineCount = readU32(is);
+    checkCount(lineCount);
+    std::vector<int> lines(lineCount);
+    for (std::uint32_t i = 0; i < lineCount; ++i)
     {
-        lines[i] = read_i32(is);
+        lines[i] = readI32(is);
     }
 
     for (std::size_t i = 0; i < code.size(); ++i)
     {
         const int line = i < lines.size() ? lines[i] : 0;
-        chunk.write(code[i], line);
+        binary.write(code[i], line);
     }
 
-    return chunk;
+    return binary;
 }
 
 } // namespace
 
-void write_module_file(std::ostream& os, const Module& module)
+void writeModuleFile(std::ostream& os, const Module& module)
 {
-    os.write(k_magic, 4);
-    write_u32(os, k_version);
-    write_string(os, module.name);
+    os.write(Magic, 4);
+    writeU32(os, Version);
+    writeString(os, module.Name);
 
-    write_u32(os, static_cast<std::uint32_t>(module.imports.size()));
-    for (const auto& import : module.imports)
+    writeU32(os, static_cast<std::uint32_t>(module.Imports.size()));
+    for (const auto& import : module.Imports)
     {
-        write_string(os, import);
+        writeString(os, import);
     }
 
-    write_u32(os, static_cast<std::uint32_t>(module.symbols.size()));
-    for (const auto& symbol : module.symbols)
+    writeU32(os, static_cast<std::uint32_t>(module.Symbols.size()));
+    for (const auto& symbol : module.Symbols)
     {
-        os.put(static_cast<char>(static_cast<std::uint8_t>(symbol.kind)));
-        write_string(os, symbol.name);
-        write_string(os, symbol.signature);
-        write_u32(os, static_cast<std::uint32_t>(symbol.arity));
-        write_u32(os, static_cast<std::uint32_t>(symbol.locals));
-        write_chunk(os, symbol.body);
+        os.put(static_cast<char>(static_cast<std::uint8_t>(symbol.Kind)));
+        os.put(symbol.Defined ? 1 : 0);
+        writeString(os, symbol.Name);
+        writeString(os, symbol.Signature);
+        writeU32(os, static_cast<std::uint32_t>(symbol.Arity));
+        writeU32(os, static_cast<std::uint32_t>(symbol.Locals));
+        writeBinary(os, symbol.Body);
     }
 }
 
-void read_module_file(std::istream& is, Module& out)
+void readModuleFile(std::istream& is, Module& out)
 {
     char magic[4] = {};
     is.read(magic, 4);
-    if (is.gcount() != 4 || std::memcmp(magic, k_magic, 4) != 0)
+    if (is.gcount() != 4 || std::memcmp(magic, Magic, 4) != 0)
     {
         throw ModuleFileError("not a Xenon module file (bad magic)");
     }
 
-    const auto version = read_u32(is);
-    if (version != k_version)
+    const auto version = readU32(is);
+    if (version != Version)
     {
         throw ModuleFileError("unsupported module file version");
     }
 
     out = Module{};
-    out.name = read_string(is);
+    out.Name = readString(is);
 
-    const auto import_count = read_u32(is);
-    check_count(import_count);
-    out.imports.reserve(import_count);
-    for (std::uint32_t i = 0; i < import_count; ++i)
+    const auto importCount = readU32(is);
+    checkCount(importCount);
+    out.Imports.reserve(importCount);
+    for (std::uint32_t i = 0; i < importCount; ++i)
     {
-        out.imports.emplace_back(read_string(is));
+        out.Imports.emplace_back(readString(is));
     }
 
-    const auto symbol_count = read_u32(is);
-    check_count(symbol_count);
-    out.symbols.reserve(symbol_count);
-    for (std::uint32_t i = 0; i < symbol_count; ++i)
+    const auto symbolCount = readU32(is);
+    checkCount(symbolCount);
+    out.Symbols.reserve(symbolCount);
+    for (std::uint32_t i = 0; i < symbolCount; ++i)
     {
         const int kind = is.get();
         if (kind < 0 || kind > static_cast<int>(SymbolKind::Variable))
@@ -299,35 +300,42 @@ void read_module_file(std::istream& is, Module& out)
             throw ModuleFileError("invalid symbol kind in module file");
         }
 
+        const int defined = is.get();
+        if (defined < 0)
+        {
+            throw ModuleFileError("truncated module file");
+        }
+
         Symbol symbol;
-        symbol.kind = static_cast<SymbolKind>(kind);
-        symbol.name = read_string(is);
-        symbol.signature = read_string(is);
-        symbol.arity = read_u32(is);
-        symbol.locals = read_u32(is);
-        symbol.body = read_chunk(is);
-        out.symbols.push_back(std::move(symbol));
+        symbol.Kind = static_cast<SymbolKind>(kind);
+        symbol.Defined = defined != 0;
+        symbol.Name = readString(is);
+        symbol.Signature = readString(is);
+        symbol.Arity = readU32(is);
+        symbol.Locals = readU32(is);
+        symbol.Body = readBinary(is);
+        out.Symbols.push_back(std::move(symbol));
     }
 }
 
-void write_module_file(const std::string& path, const Module& module)
+void writeModuleFile(const std::string& path, const Module& module)
 {
     std::ofstream output(path, std::ios::binary);
     if (!output)
     {
         throw ModuleFileError("cannot open module file for writing: " + path);
     }
-    write_module_file(output, module);
+    writeModuleFile(output, module);
 }
 
-void read_module_file(const std::string& path, Module& out)
+void readModuleFile(const std::string& path, Module& out)
 {
     std::ifstream input(path, std::ios::binary);
     if (!input)
     {
         throw ModuleFileError("cannot open module file for reading: " + path);
     }
-    read_module_file(input, out);
+    readModuleFile(input, out);
 }
 
 } // namespace xenon

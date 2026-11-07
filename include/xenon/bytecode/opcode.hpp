@@ -31,6 +31,6 @@ enum class OpCode : std::uint8_t
 };
 
 /// Returns the mnemonic of `op` (e.g. `"Add"`).
-[[nodiscard]] const char* opcode_name(OpCode op);
+[[nodiscard]] const char* opcodeName(OpCode op);
 
 } // namespace xenon

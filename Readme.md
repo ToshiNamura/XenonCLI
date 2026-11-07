@@ -1,170 +1,176 @@
+<div align="center">
+
+**⚠️ ВНИМАНИЕ:** 🤖 Проект разработан с использованием ИИ-ассистента **DeepSeek** (DeepSeek V4 Pro).
+
+</div>
+
 # XenonCLI
 
-Среда выполнения (runtime) для скриптов в C++-подобном синтаксисе. Исходный текст
-(`.ixx`) транслируется в упакованный бинарный артефакт — файл **`.module`**, а
-**Xenon VM** загружает из него символы (классы, функции, структуры, шаблоны,
-перечисления) и исполняет их.
-
-> Реализованы: формат `.module`, среда выполнения (`Env`), компилятор подмножества
-> C++-подобного языка (функции, `if`/`while`, выражения) и VM с вызовами функций.
-
-> 🤖 Проект разработан с использованием ИИ-ассистента **DeepSeek** (DeepSeek V4 Pro).
-
-## Архитектура
+Компактная система выполнения по образцу Java/.NET. **Xenon** компилирует
+C++-подобный язык (модули `.ixx`) в собственный бинарный код, упаковывает его в
+`.module`/`.xenon` и исполняет на виртуальной машине.
 
 ```mermaid
 flowchart LR
-    SRC["исходник .ixx<br/>(C++-подобный модуль)"] --> COMP["Compiler<br/>(заголовок → лексер → парсер → кодоген)"]
-    COMP --> MOD["Module<br/>(файл .module: упакованные символы)"]
-    MOD --> VM["Xenon VM<br/>(загружает символы, исполняет байт-код)"]
-    VM --> RES["Значение результата"]
+    SRC["исходник .ixx"] --> COMP["Compiler<br/>(заголовок → лексер → парсер → кодоген)"]
+    COMP --> MOD["Module (.module)"]
+    MOD --> VM["VirtualMachine<br/>(Runtime + VirtualStack + VirtualHeap)"]
+    MOD --> PACK["Packer (.xenon, ZIP + манифест)"]
+    PACK --> VM
 ```
 
-Модули:
+## Подпроекты
 
-| Модуль | Назначение |
-| --- | --- |
-| `bytecode` | `OpCode`, `Chunk` — байт-код тела функции, дизассемблер |
-| `module` | `Symbol`, `Module`, сериализация/загрузка `.module` |
-| `runtime` | `Value`, `Env` (куча, объекты, стек), `VM` (исполнение) |
-| `compiler` | фронт-энд: лексер, парсер (AST), кодогенератор `.ixx` → `.module` |
+| Подпроект | Цель сборки | Назначение |
+| --- | --- | --- |
+| `xenon.core` | `xenon_core` | базовые классы, структуры, перечисления, определения препроцессора: байт-код (`XenonBinary`, `OpCode`), значения, `Module`/`Symbol`, формат `.module`, фронт-энд компилятора, исполнитель (`Runtime`, `VirtualMachine`, `VirtualStack`, `VirtualHeap`) |
+| `xenon.env` | `xenon_env` | среда классов Xenon: `Object`, `String`, `Vector<Type>`, `Environment` и встроенный модуль `xenon.env` |
+| `xenon` | `xenon` | исполняемая программа: компилирует, упаковывает и выполняет байт-код (компоненты `compiler`, `executor`, `packer`) |
 
 ## Скрипты: модули `.ixx`
 
-Скрипт — это модуль, похожий на интерфейсный модуль C++20 (`.ixx`).
-Структура файла:
+Скрипт — модуль, похожий на интерфейсный модуль C++20 (`.ixx`). Один файл
+`.ixx` компилируется в один файл `.module`.
 
 ```cpp
 // examples/example.ixx
 export module Example;    // 1) объявление модуля (обязательно, первым)
 
-import Math;              // 2) зависимости модуля (как `using`/`import` в C#)
+import Math;              // 2) зависимости модуля
 import IO.Core;
 
 #include "xenon/xenon.hpp" // 3) инклуды хост-окружения
 
-export int add(int a, int b) // 4) тело: обычный код
+double add(double a, double b) // 4) тело: обычный C++-подобный код
 {
     return a + b;
 }
 
-int private_helper(int x) // без `export` — не виден снаружи
+double main()
 {
-    return x * 2;
+    return add(20.0, 22.0);
 }
 ```
-
-Правила:
 
 | Элемент | Назначение |
 | --- | --- |
-| `export module Name;` | объявляет имя модуля; обязателен и должен идти первым |
-| `import Name;` | зависимость от другого модуля (аналог `using` в C#) |
-| `#include ...` | текстовый инклуд заголовка хост-окружения |
-| `export` | помечает объявления, видимые потребителям модуля |
+| `export module Name;` | имя модуля; обязателен и должен идти первым |
+| `import Name;` | зависимость от другого модуля |
+| `#include ...` | текстовый инклуд (содержимое вставляется на место директивы) |
+| `export` | помечает символы/объявления, видимые за пределами модуля |
 
-Видимость компонентов модуля определяется ключевым словом `export`: всё, что
-идёт без `export`, остаётся приватным внутри модуля.
+Файл `.module` содержит **символы**: функции, классы, структуры, перечисления,
+шаблоны и глобальные переменные.
 
 ## Артефакт: файлы `.module`
 
-Скомпилированный модуль сохраняется в бинарный файл `.module`. Внутри него —
-упакованные символы, которые экспортирует модуль:
+Скомпилированный модуль сохраняется в бинарный файл `.module` (разметка в духе
+COFF/PE). Внутри — упакованные символы, которые экспортирует модуль.
 
-| Тип символа | Что содержит |
-| --- | --- |
-| `Function` | сигнатуру и упакованный байт-код тела |
-| `Class` / `Struct` | поля и методы (упакованное описание) |
-| `Enum` | перечислители |
-| `Template` | параметризованное описание |
-| `Variable` | глобальные переменные / константы |
+## Среда выполнения (исполнитель)
 
-Среда выполнения загружает символы из `.module` и исполняет функции.
-
-## Среда выполнения (API)
-
-Полноценная среда выполнения построена по образцу JNI (Java C++ API): объект
-`Env` — это «окружение», через которое хост взаимодействует с VM.
+Исполнитель построен по образцу Java C++ API (JNI): класс `Runtime` хранит
+массив объектов `Module` и предоставляет окружение, через которое хост
+взаимодействует с виртуальной машиной.
 
 ```cpp
-xenon::Env env;                          // среда выполнения (аналог JNIEnv)
+xenon::Runtime runtime;
 
-// куча: объекты, массивы, строки
-xenon::Ref point = env.new_object("Point");
-env.set_field(point, "x", 1.5);
-env.set_field(point, "y", 2.5);
-xenon::Ref xs = env.new_array(3);
-env.set_element(xs, 0, 10.0);
-xenon::Ref s = env.new_string("hello");
+runtime.addModule(xenon::environmentModule()); // встроенный модуль xenon.env
+runtime.loadModuleFile("example.module");
 
-// стек операндов
-env.push(1.2);
-env.push(env.get_field(point, "x"));
-double top = std::get<double>(env.pop());
+xenon::Ref point = runtime.newObject("Point");
+runtime.setField(point, "x", 1.5);
+xenon::Ref s = runtime.newString("hello");
 
-// исполнение
-env.load(module);
-env.run("add");
-xenon::Value result = env.last_value();
+int code = runtime.runMain("main", {"a", "b"}, {}); // запуск точки входа
 ```
-
-Основные компоненты среды:
 
 | Компонент | Назначение |
 | --- | --- |
-| `Env` | API окружения: объекты, поля, массивы, строки, стек, запуск |
-| `Heap` | управляемая куча: хранит все объекты, выдаёт `Ref` |
-| `Object` | объект на куче: `Object` (поля), `Array`, `String` |
-| `Value` | значение: `double`, `bool`, `null`, `Ref` |
-| `VM` | движок исполнения: байт-код поверх внешнего стека |
+| `Runtime` | исполнитель: массив модулей, API объектов/полей/стек, запуск |
+| `VirtualStack` | стек операндов виртуальной машины |
+| `VirtualHeap` | управляемая куча: объекты, массивы, строки |
+| `VirtualMachine` | исполняет бинарный код `XenonBinary` |
+| `XenonBinary` | бинарный код (опкоды + пул констант + номера строк) |
 
-Методы `Env` (JNI-подобные): `new_object`, `new_array`, `new_string`,
-`set_field`/`get_field`, `set_element`/`get_element`, `array_length`,
-`string_value`, `push`/`pop`/`peek`/`stack_size`, `load`/`run`/`run_chunk`,
-`is_number`/`is_boolean`/`is_null`/`is_ref`.
+Модули можно загрузить из файла `.module` или создать вручную. Содержимое
+символов (поля классов и т. д.) можно менять во время выполнения.
 
-## Язык
+## Библиотека среды `xenon.env`
 
-Компилятор поддерживает подмножество C++-подобного синтаксиса:
+`xenon.env` задаёт основу Xenon API — классы, наследуемые от `Object`:
 
-```cpp
-export module Example;
+| Класс | Назначение |
+| --- | --- |
+| `Object` | базовый класс с виртуальными методами `getType`, `getHash`, `toString` |
+| `String` | строка |
+| `Vector<Type>` | динамический список |
+| `Environment` | хранит и управляет классами среды; сам наследуется от `Object` |
 
-double factorial(double n)   // функция с параметрами и локальными переменными
-{
-    double result = 1.0;
-    double i = 1.0;
-    while (i <= n)            // цикл while
-    {
-        result = result * i;
-        i = i + 1.0;
-    }
-    return result;
-}
+Для библиотеки реализован встроенный модуль `environmentModule()`, который можно
+добавить в `Runtime`.
 
-double main()
-{
-    if (factorial(5.0) == 120.0)   // if/else и вызовы функций
-    {
-        return 1.0;
-    }
-    return 0.0;
-}
+## Упаковщик: файлы `.xenon`
+
+`Packer` упаковывает файлы `.module` и `.hint` в ZIP-архив с расширением
+`.xenon` (как Jar), создавая и настраивая манифест `META-INF/MANIFEST.MF`:
+
+```
+Manifest-Version: 1.0
+Main-Module: Example
+Main-Function: main
 ```
 
-Поддерживается:
+## Командная строка
 
-| Возможность | Пример |
-| --- | --- |
-| Типы | `int`, `double`, `bool`, `void` |
-| Литералы | `1.5`, `true`, `false`, `null` |
-| Выражения | `+ - * /`, `== != < <= > >=`, `&& \|\|`, `!`, `-x` |
-| Присваивание | `x = expr` |
-| Объявления | `double x = 1.0;` |
-| Управление | `if`/`else`, `while`, `return` |
-| Функции | объявление и вызов `f(a, b)` |
+```
+xenon                                    версия и справка
+xenon help                               справка
+xenon version                            версия
+xenon compile <sources>... [module]      скомпилировать .ixx + .hint в .module
+xenon run <xenon> <arguments>...         запустить .xenon (точка входа из манифеста)
+xenon run <module> <function/method> <arguments>...
+                                         запустить функцию/метод из .module
+xenon pack <modules>... <xenon> [manifest]
+                                         упаковать модули в .xenon
+```
 
-Строки и классы/структуры — на следующем этапе.
+### Сигнатуры запускаемой функции
+
+Возвращаемое значение — целое (код завершения) или `void`. Поддерживаются:
+
+```cpp
+int main(void);
+int main(int argc, char* argv[]);
+int main(int argc, char* argv[], char* envp[]);
+int main(xenon::Vector<xenon::String> arguments);
+int main(xenon::Vector<xenon::String> arguments, xenon::Vector<xenon::String> environment);
+```
+
+`argv`/`envp` передаются как массивы строк на куче виртуальной машины.
+
+## Стиль кода
+
+- Открывающая фигурная скобка — на новой строке.
+- Классы, структуры, перечисления, значения перечислений, глобальные переменные,
+  шаблоны и публичные поля — с заглавной буквы, слитно: `ExampleSymvolName`.
+- Функции, методы, локальные переменные — с маленькой буквы, слитно:
+  `exampleSymvolName`.
+- Приватные поля — с подчёркивания: `_exampleSymvolName`.
+
+## Сборка и запуск
+
+```sh
+cmake --preset default
+cmake --build --preset default
+ctest --test-dir build/default --output-on-failure
+
+./build/xenon compile examples/sqrt_demo.ixx examples/math.hint
+./build/xenon run examples/sqrt_demo.module main
+```
+
+Подробнее — в [docs](docs/README.md).
 
 ## Структура
 
@@ -172,99 +178,15 @@ double main()
 XenonCLI/
 ├── CMakeLists.txt
 ├── CMakePresets.json
-├── include/xenon/        # публичные заголовки
-│   ├── bytecode/
-│   ├── compiler/
-│   ├── module/
-│   └── runtime/
-├── src/                  # реализация
-│   ├── bytecode/
-│   ├── compiler/
-│   ├── module/
-│   ├── runtime/
-│   └── main.cpp          # CLI
-├── tests/                # юнит-тесты (CTest)
-└── examples/             # примеры скриптов
+├── include/xenon/
+│   ├── core/       # определения препроцессора
+│   ├── bytecode/   # OpCode, XenonBinary, дизассемблер
+│   ├── compiler/   # лексер, парсер (AST), кодогенератор
+│   ├── env/        # Object, String, Vector, Environment
+│   ├── module/     # Symbol, Module, формат .module
+│   ├── packer/     # Packer, Manifest (.xenon)
+│   └── runtime/    # Runtime, VirtualMachine, VirtualStack, VirtualHeap, Value
+├── src/
+├── tests/          # юнит-тесты (CTest)
+└── examples/       # примеры .ixx и .hint
 ```
-
-## Требования
-
-- CMake ≥ 3.24
-- Компилятор с поддержкой C++23 (`std::format`):
-  - MSVC ≥ 19.34 (VS 2022 17.4+)
-  - GCC ≥ 13
-  - Clang ≥ 17
-
-## Сборка
-
-Через пресеты:
-
-```sh
-cmake --preset default
-cmake --build --preset default
-ctest --preset default
-```
-
-Либо вручную:
-
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-ctest --test-dir build
-```
-
-## Запуск
-
-Без аргументов — демонстрация: модуль с функцией `add` упаковывается в `.module`,
-перечитывается и исполняется на VM:
-
-```sh
-./build/default/xenon
-```
-
-Со скриптом `.ixx` — модуль компилируется в `.module` и исполняется (функция
-`main` или первая функция модуля):
-
-```sh
-./xenon examples/example.ixx
-```
-
-С готовым артефактом — загрузка символов из файла `.module` и их исполнение:
-
-```sh
-./xenon path/to/module.module
-```
-
-## Байт-код
-
-Байт-код хранится внутри символа `Function` в `.module`-файле. Каждая
-инструкция — однобайтовый опкод; у `Constant` — однобайтовый операнд (индекс в
-пуле констант, до 256 констант на `Chunk` — временное ограничение).
-
-| Опкод | Действие |
-| --- | --- |
-| `Constant` | положить константу на стек |
-| `LoadLocal` / `StoreLocal` | чтение / запись локальной переменной |
-| `Add` / `Subtract` / `Multiply` / `Divide` | бинарные арифметические операции |
-| `Negate` / `Not` | унарные операции |
-| `Equal` / `NotEqual` / `Less` / ... | сравнения |
-| `Jump` / `JumpIfFalse` | переходы (для `if`/`while`) |
-| `Call` | вызов функции |
-| `Return` | снять вершину стека и завершиться с результатом |
-
-## Дорожная карта
-
-- [x] Каркас CMake-проекта (C++23, библиотека + CLI + CTest)
-- [x] Байт-код: `OpCode`, `Chunk`, дизассемблер
-- [x] Стековая VM и тип `Value`
-- [x] Концепт модуля `.ixx` и парсер заголовка (`export module`/`import`/`#include`)
-- [x] Артефакт `.module`: `Symbol`, `Module`, сериализация и загрузка символов в VM
-- [x] Среда выполнения: `Env` (куча, объекты, стек), API в стиле JNI
-- [x] Лексер и парсер C++-подобного синтаксиса (AST)
-- [x] Кодогенератор (`.ixx` → символы в `.module`)
-- [x] Функции, локальные переменные, `if`/`while`, вызовы функций
-- [ ] Строки, классы/структуры, встроенные функции
-
-## Лицензия
-
-BSD 3-Clause — см. [LICENSE.txt](LICENSE.txt).

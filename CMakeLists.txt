@@ -21,22 +21,24 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Core: the Xenon runtime library (bytecode, value, VM, compiler front end)
+# xenon.core — shared base: definitions, bytecode, values, modules, compiler,
+#              virtual stack/heap/machine and the Runtime executor.
 # ---------------------------------------------------------------------------
 add_library(xenon_core
-    src/bytecode/chunk.cpp
     src/bytecode/disassembler.cpp
     src/bytecode/opcode.cpp
+    src/bytecode/xenon_binary.cpp
     src/compiler/codegen.cpp
     src/compiler/compiler.cpp
     src/compiler/lexer.cpp
     src/compiler/module_parser.cpp
     src/compiler/parser.cpp
     src/module/module_file.cpp
-    src/runtime/env.cpp
-    src/runtime/object.cpp
+    src/runtime/runtime.cpp
     src/runtime/value.cpp
-    src/runtime/vm.cpp)
+    src/runtime/virtual_heap.cpp
+    src/runtime/virtual_machine.cpp
+    src/runtime/virtual_stack.cpp)
 
 add_library(xenon::core ALIAS xenon_core)
 
@@ -48,10 +50,34 @@ target_include_directories(xenon_core
 target_compile_features(xenon_core PUBLIC cxx_std_23)
 
 # ---------------------------------------------------------------------------
-# Executable: the `xenon` CLI
+# xenon.env — the Xenon API environment (Object, String, Vector, Environment).
 # ---------------------------------------------------------------------------
-add_executable(xenon src/main.cpp)
-target_link_libraries(xenon PRIVATE xenon::core)
+add_library(xenon_env
+    src/env/environment.cpp
+    src/env/env_module.cpp
+    src/env/object.cpp
+    src/env/string.cpp)
+
+add_library(xenon::env ALIAS xenon_env)
+
+target_link_libraries(xenon_env PUBLIC xenon::core)
+
+target_include_directories(xenon_env
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>)
+
+target_compile_features(xenon_env PUBLIC cxx_std_23)
+
+# ---------------------------------------------------------------------------
+# xenon — the executable: compiles, packs and executes byte-code.
+# ---------------------------------------------------------------------------
+add_executable(xenon
+    src/main.cpp
+    src/packer/manifest.cpp
+    src/packer/packer.cpp)
+
+target_link_libraries(xenon PRIVATE xenon::core xenon::env)
 
 # ---------------------------------------------------------------------------
 # Tests

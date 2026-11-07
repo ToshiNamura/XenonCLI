@@ -29,11 +29,11 @@ struct Ref
 using Value = std::variant<double, bool, Null, Ref>;
 
 /// Human-readable representation of a value (used by the CLI and the debugger).
-[[nodiscard]] std::string to_string(const Value& value);
+[[nodiscard]] std::string toString(const Value& value);
 
 inline std::ostream& operator<<(std::ostream& os, const Value& value)
 {
-    return os << to_string(value);
+    return os << toString(value);
 }
 
 } // namespace xenon

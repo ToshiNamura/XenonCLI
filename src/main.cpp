@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -5,208 +6,338 @@
 #include <iterator>
 #include <sstream>
 #include <string>
+#include <vector>
 
-#include "xenon/bytecode/opcode.hpp"
+#include "xenon/core/defines.hpp"
 #include "xenon/compiler/compiler.hpp"
-#include "xenon/compiler/module.hpp"
-#include "xenon/compiler/module_parser.hpp"
-#include "xenon/module/module.hpp"
+#include "xenon/env/env_module.hpp"
 #include "xenon/module/module_file.hpp"
-#include "xenon/runtime/env.hpp"
+#include "xenon/packer/manifest.hpp"
+#include "xenon/packer/packer.hpp"
+#include "xenon/runtime/error.hpp"
+#include "xenon/runtime/runtime.hpp"
 
 namespace
 {
 
-/// Builds a demo module with a single `add` function computing `1.2 + 3.4`.
-xenon::Module make_demo_module()
+constexpr int kExitUsage = 64;    // EX_USAGE
+constexpr int kExitData = 65;     // EX_DATAERR
+constexpr int kExitNoInput = 66;  // EX_NOINPUT
+constexpr int kExitSoftware = 70; // EX_SOFTWARE
+constexpr int kExitIo = 74;       // EX_IOERR
+
+void printHelp()
+{
+    std::cout
+        << "Xenon " << XENON_VERSION_STRING
+        << " - compile, pack and run Xenon byte-code\n\n"
+        << "Usage:\n"
+        << "  xenon                       Show version and this help.\n"
+        << "  xenon help                  Show this help.\n"
+        << "  xenon version               Show the program version.\n"
+        << "  xenon compile <sources>... [module]\n"
+        << "                              Compile one .ixx and N .hint files into one .module.\n"
+        << "  xenon run <xenon> <args>... Run a .xenon package (entry from manifest).\n"
+        << "  xenon run <module> <function/method> <args>...\n"
+        << "                              Run a function/method from a .module file.\n"
+        << "  xenon pack <modules>... <xenon> [manifest]\n"
+        << "                              Pack modules into a .xenon archive.\n";
+}
+
+void printVersion()
+{
+    std::cout << "Xenon " << XENON_VERSION_STRING << '\n';
+}
+
+bool readTextFile(const std::string& path, std::string& out)
+{
+    std::ifstream input(path, std::ios::binary);
+    if (!input)
+    {
+        return false;
+    }
+    out.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    return true;
+}
+
+void registerBuiltInNatives(xenon::Runtime& runtime)
 {
     using namespace xenon;
 
+    runtime.registerNative("sqrt",
+                           [](const std::vector<Value>& args) -> Value
+                           {
+                               if (args.size() != 1 || !Runtime::isNumber(args[0]))
+                               {
+                                   throw RuntimeError("sqrt expects one number");
+                               }
+                               return Value{std::sqrt(std::get<double>(args[0]))};
+                           });
+
+    runtime.registerNative("pow",
+                           [](const std::vector<Value>& args) -> Value
+                           {
+                               if (args.size() != 2 || !Runtime::isNumber(args[0]) ||
+                                   !Runtime::isNumber(args[1]))
+                               {
+                                   throw RuntimeError("pow expects two numbers");
+                               }
+                               return Value{std::pow(std::get<double>(args[0]),
+                                                     std::get<double>(args[1]))};
+                           });
+}
+
+int compileCommand(const std::vector<std::string>& sources)
+{
+    using namespace xenon;
+
+    std::vector<std::string> hintPaths;
+    std::vector<std::string> sourcePaths;
+    std::string outputPath;
+
+    for (const auto& arg : sources)
+    {
+        if (arg.ends_with(XENON_HINT_EXTENSION))
+        {
+            hintPaths.push_back(arg);
+        }
+        else if (arg.ends_with(XENON_SOURCE_EXTENSION))
+        {
+            sourcePaths.push_back(arg);
+        }
+        else
+        {
+            if (!outputPath.empty())
+            {
+                std::cerr << "error: multiple output module names given\n";
+                return kExitUsage;
+            }
+            outputPath = arg;
+        }
+    }
+
+    if (sourcePaths.size() != 1)
+    {
+        std::cerr << "error: exactly one .ixx source is required (got " << sourcePaths.size()
+                  << ")\n";
+        return kExitUsage;
+    }
+
+    std::vector<Module> hints;
+    for (const auto& path : hintPaths)
+    {
+        std::string text;
+        if (!readTextFile(path, text))
+        {
+            std::cerr << "error: cannot open '" << path << "'\n";
+            return kExitNoInput;
+        }
+
+        Compiler compiler;
+        Module module;
+        if (!compiler.compileHints(text, module))
+        {
+            std::cerr << "error: " << compiler.lastError() << '\n';
+            return kExitData;
+        }
+        hints.push_back(std::move(module));
+        std::cout << "hint: " << path << " (" << hints.back().Symbols.size() << " symbols)\n";
+    }
+
+    const std::string& sourcePath = sourcePaths.front();
+
+    std::string text;
+    if (!readTextFile(sourcePath, text))
+    {
+        std::cerr << "error: cannot open '" << sourcePath << "'\n";
+        return kExitNoInput;
+    }
+
+    Compiler compiler;
     Module module;
-    module.name = "Demo";
-
-    Symbol add;
-    add.name = "add";
-    add.kind = SymbolKind::Function;
-    add.signature = "double add(double, double)";
-
-    const auto a = add.body.add_constant(1.2);
-    const auto b = add.body.add_constant(3.4);
-    add.body.write(OpCode::Constant, 1);
-    add.body.write(static_cast<std::uint8_t>(a), 1);
-    add.body.write(OpCode::Constant, 1);
-    add.body.write(static_cast<std::uint8_t>(b), 1);
-    add.body.write(OpCode::Add, 1);
-    add.body.write(OpCode::Return, 1);
-
-    module.symbols.push_back(std::move(add));
-    return module;
-}
-
-/// Prints the symbols exported by a module.
-void print_symbols(const xenon::Module& module)
-{
-    for (const auto& symbol : module.symbols)
+    if (!compiler.compile(text, module, hints))
     {
-        std::cout << "  " << symbol.name << " : " << symbol.signature << '\n';
-    }
-}
-
-/// Loads `module` into the VM, lists its symbols and runs the entry function.
-int run_module(const xenon::Module& module)
-{
-    using namespace xenon;
-
-    std::cout << "module: " << module.name << '\n';
-    for (const auto& import : module.imports)
-    {
-        std::cout << "  import: " << import << '\n';
-    }
-    print_symbols(module);
-
-    Env env;
-    env.load(module);
-
-    std::string entry;
-    if (module.find("main") != nullptr)
-    {
-        entry = "main";
-    }
-    else if (!module.symbols.empty() && module.symbols.front().kind == SymbolKind::Function)
-    {
-        entry = module.symbols.front().name;
+        std::cerr << "error: " << compiler.lastError() << '\n';
+        return kExitData;
     }
 
-    if (entry.empty())
+    if (outputPath.empty())
     {
-        std::cout << "no runnable function\n";
-        return EXIT_SUCCESS;
+        outputPath = sourcePath.substr(0, sourcePath.rfind('.')) + XENON_MODULE_EXTENSION;
+    }
+    else if (!outputPath.ends_with(XENON_MODULE_EXTENSION))
+    {
+        outputPath += XENON_MODULE_EXTENSION;
     }
 
-    if (env.run(entry) != InterpretResult::Ok)
+    try
     {
-        return 70; // EX_SOFTWARE
+        writeModuleFile(outputPath, module);
     }
-    std::cout << "result: " << env.last_value() << '\n';
+    catch (const ModuleFileError& error)
+    {
+        std::cerr << "error: " << error.what() << '\n';
+        return kExitIo;
+    }
+
+    std::cout << "compiled: " << sourcePath << " -> " << outputPath << " ("
+              << module.Symbols.size() << " symbols)\n";
     return EXIT_SUCCESS;
 }
 
-/// Demonstrates the runtime environment API (heap, objects, operand stack).
-int run_env_demo()
+int runPackage(const std::string& archivePath, const std::vector<std::string>& arguments)
 {
     using namespace xenon;
 
-    Env env;
+    std::vector<PackedEntry> entries;
+    std::string manifestText;
+    try
+    {
+        entries = Packer::readArchive(archivePath);
+        manifestText = Packer::readManifest(archivePath);
+    }
+    catch (const PackError& error)
+    {
+        std::cerr << "error: " << error.what() << '\n';
+        return kExitData;
+    }
 
-    const auto point = env.new_object("Point");
-    env.set_field(point, "x", 1.5);
-    env.set_field(point, "y", 2.5);
+    const Manifest manifest = Manifest::parse(manifestText);
+    if (!manifest.hasEntryPoint())
+    {
+        std::cerr << "error: the manifest does not designate an entry function\n";
+        return kExitData;
+    }
 
-    const auto numbers = env.new_array(3);
-    env.set_element(numbers, 0, 10.0);
-    env.set_element(numbers, 1, 20.0);
-    env.set_element(numbers, 2, 30.0);
+    Runtime runtime;
+    runtime.addModule(environmentModule());
 
-    const auto greeting = env.new_string("hello");
+    std::string moduleName = manifest.MainModule;
+    if (moduleName.ends_with(XENON_MODULE_EXTENSION))
+    {
+        moduleName = moduleName.substr(0, moduleName.size() - std::string(XENON_MODULE_EXTENSION).size());
+    }
 
-    std::cout << "heap: " << env.heap().size() << " object(s)\n";
-    std::cout << "  " << env.class_name(point) << " x=" << env.get_field(point, "x")
-              << " y=" << env.get_field(point, "y") << '\n';
-    std::cout << "  array length=" << env.array_length(numbers)
-              << " [0]=" << env.get_element(numbers, 0) << '\n';
-    std::cout << "  string=\"" << env.string_value(greeting) << "\"\n";
+    bool loaded = false;
+    for (const auto& entry : entries)
+    {
+        std::stringstream buffer(std::string(entry.Data.begin(), entry.Data.end()));
+        Module module;
+        try
+        {
+            readModuleFile(buffer, module);
+        }
+        catch (const ModuleFileError&)
+        {
+            continue; // not a module file
+        }
 
-    env.push(1.2);
-    env.push(env.get_field(point, "x"));
-    env.push(env.get_element(numbers, 2));
-    std::cout << "stack size=" << env.stack_size() << " top=" << env.peek() << '\n';
-    std::cout << "pop=" << env.pop() << ", pop=" << env.pop() << ", pop=" << env.pop() << '\n';
+        if (module.Name == manifest.MainModule || module.Name == moduleName)
+        {
+            runtime.addModule(module);
+            loaded = true;
+            break;
+        }
+    }
 
-    return EXIT_SUCCESS;
+    if (!loaded)
+    {
+        std::cerr << "error: module '" << manifest.MainModule << "' not found in package\n";
+        return kExitData;
+    }
+
+    registerBuiltInNatives(runtime);
+    return runtime.runMain(manifest.MainFunction, arguments, {});
 }
 
-/// Runs the built-in demo: a packed module round-tripped through the `.module` format.
-int run_demo()
-{
-    using namespace xenon;
-
-    const auto module = make_demo_module();
-
-    std::stringstream buffer;
-    write_module_file(buffer, module);
-
-    Module loaded;
-    read_module_file(buffer, loaded);
-
-    std::cout << "== packed into .module bytes and reloaded ==\n";
-    const int rc = run_module(loaded);
-
-    std::cout << "== environment API demo ==\n";
-    run_env_demo();
-
-    return rc;
-}
-
-/// Loads and runs a compiled `.module` file.
-int run_module_file(const std::string& path)
+int runFunction(const std::string& modulePath, const std::string& function,
+                const std::vector<std::string>& arguments)
 {
     using namespace xenon;
 
     Module module;
     try
     {
-        read_module_file(path, module);
+        readModuleFile(modulePath, module);
     }
-    catch (const ModuleFileError& error)
+    catch (const ModuleFileError&)
     {
-        std::cerr << "error: " << error.what() << '\n';
-        return 65; // EX_DATAERR
+        readModuleFile(modulePath + XENON_MODULE_EXTENSION, module);
     }
-    return run_module(module);
+
+    Runtime runtime;
+    runtime.addModule(environmentModule());
+    runtime.addModule(module);
+    registerBuiltInNatives(runtime);
+
+    std::string target = function;
+    const auto separator = target.rfind("::");
+    if (separator != std::string::npos)
+    {
+        target = target.substr(separator + 2);
+    }
+
+    return runtime.runMain(target, arguments, {});
 }
 
-/// Compiles a `.ixx` source file into a module and runs it.
-int run_source_file(const std::string& path)
+int packCommand(const std::vector<std::string>& args)
 {
     using namespace xenon;
 
-    std::ifstream input(path, std::ios::binary);
-    if (!input)
+    std::vector<std::string> modules;
+    std::string archivePath;
+    std::string manifestPath;
+
+    for (const auto& arg : args)
     {
-        std::cerr << "error: cannot open '" << path << "'\n";
-        return 66; // EX_NOINPUT
+        if (arg.ends_with(XENON_PACKAGE_EXTENSION))
+        {
+            if (!archivePath.empty())
+            {
+                std::cerr << "error: multiple .xenon archive names given\n";
+                return kExitUsage;
+            }
+            archivePath = arg;
+        }
+        else if (arg.ends_with(XENON_MODULE_EXTENSION) || arg.ends_with(XENON_HINT_EXTENSION))
+        {
+            modules.push_back(arg);
+        }
+        else
+        {
+            if (!manifestPath.empty())
+            {
+                std::cerr << "error: multiple manifest files given\n";
+                return kExitUsage;
+            }
+            manifestPath = arg;
+        }
     }
 
-    const std::string source{std::istreambuf_iterator<char>(input),
-                             std::istreambuf_iterator<char>()};
-
-    ModuleHeader header;
-    ModuleParser parser;
-    if (parser.parse(source, header) != ModuleParseResult::Ok)
+    if (archivePath.empty())
     {
-        std::cerr << "error: " << parser.last_error() << '\n';
-        return 65; // EX_DATAERR
+        std::cerr << "error: no .xenon archive name given\n";
+        return kExitUsage;
+    }
+    if (modules.empty())
+    {
+        std::cerr << "error: no modules to pack\n";
+        return kExitUsage;
     }
 
-    std::cout << "module: " << header.name << '\n';
-    for (const auto& dependency : header.imports)
+    try
     {
-        std::cout << "  import: " << dependency << '\n';
+        Packer packer;
+        packer.pack(modules, archivePath, manifestPath);
     }
-    for (const auto& include : header.includes)
+    catch (const PackError& error)
     {
-        std::cout << "  include: " << include << '\n';
-    }
-
-    Module module;
-    Compiler compiler;
-    if (!compiler.compile(source, module))
-    {
-        std::cerr << "error: " << compiler.last_error() << '\n';
-        return 65; // EX_DATAERR
+        std::cerr << "error: " << error.what() << '\n';
+        return kExitIo;
     }
 
-    return run_module(module);
+    std::cout << "packed: " << archivePath << " (" << modules.size() << " file(s))\n";
+    return EXIT_SUCCESS;
 }
 
 } // namespace
@@ -217,20 +348,94 @@ int main(int argc, char* argv[])
     {
         if (argc == 1)
         {
-            return run_demo();
-        }
-        if (argc == 2)
-        {
-            const std::string path = argv[1];
-            if (path.ends_with(".module"))
-            {
-                return run_module_file(path);
-            }
-            return run_source_file(path);
+            printVersion();
+            std::cout << '\n';
+            printHelp();
+            return EXIT_SUCCESS;
         }
 
-        std::cerr << "usage: xenon [script.ixx | file.module]\n";
-        return 64; // EX_USAGE
+        const std::string command = argv[1];
+
+        if (command == "help")
+        {
+            printHelp();
+            return EXIT_SUCCESS;
+        }
+
+        if (command == "version")
+        {
+            printVersion();
+            return EXIT_SUCCESS;
+        }
+
+        if (command == "compile")
+        {
+            if (argc < 3)
+            {
+                std::cerr << "usage: xenon compile <sources>... [module]\n";
+                return kExitUsage;
+            }
+            std::vector<std::string> args;
+            for (int i = 2; i < argc; ++i)
+            {
+                args.emplace_back(argv[i]);
+            }
+            return compileCommand(args);
+        }
+
+        if (command == "run")
+        {
+            if (argc < 3)
+            {
+                std::cerr << "usage: xenon run <xenon> <arguments>...\n";
+                std::cerr << "       xenon run <module> <function/method> <arguments>...\n";
+                return kExitUsage;
+            }
+
+            const std::string first = argv[2];
+
+            if (first.ends_with(XENON_PACKAGE_EXTENSION))
+            {
+                std::vector<std::string> args;
+                for (int i = 3; i < argc; ++i)
+                {
+                    args.emplace_back(argv[i]);
+                }
+                return runPackage(first, args);
+            }
+
+            if (argc < 4)
+            {
+                std::cerr << "usage: xenon run <module> <function/method> <arguments>...\n";
+                return kExitUsage;
+            }
+
+            std::vector<std::string> args;
+            for (int i = 4; i < argc; ++i)
+            {
+                args.emplace_back(argv[i]);
+            }
+            return runFunction(first, argv[3], args);
+        }
+
+        if (command == "pack")
+        {
+            if (argc < 4)
+            {
+                std::cerr << "usage: xenon pack <modules>... <xenon> [manifest]\n";
+                return kExitUsage;
+            }
+            std::vector<std::string> args;
+            for (int i = 2; i < argc; ++i)
+            {
+                args.emplace_back(argv[i]);
+            }
+            return packCommand(args);
+        }
+
+        std::cerr << "unknown command: " << command << '\n';
+        printHelp();
+        return kExitUsage;
     }
     catch (const std::exception& error)
     {
