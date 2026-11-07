@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__VALUE_HPP
+#define XENON__VALUE_HPP 1
+
 #include <cstdint>
 #include <ostream>
 #include <string>
@@ -37,3 +40,5 @@ inline std::ostream& operator<<(std::ostream& os, const Value& value)
 }
 
 } // namespace xenon
+
+#endif // !XENON__VALUE_HPP

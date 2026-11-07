@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__PARSER_HPP
+#define XENON__PARSER_HPP 1
+
 #include <string>
 #include <unordered_set>
 
@@ -74,3 +77,5 @@ class Parser
 };
 
 } // namespace xenon
+
+#endif // !XENON__PARSER_HPP

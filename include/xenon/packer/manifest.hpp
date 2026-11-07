@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__MANIFEST_HPP
+#define XENON__MANIFEST_HPP 1
+
 #include <string>
 #include <string_view>
 
@@ -34,3 +37,5 @@ struct Manifest
 };
 
 } // namespace xenon
+
+#endif // !XENON__MANIFEST_HPP

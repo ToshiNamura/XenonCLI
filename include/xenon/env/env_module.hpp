@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__ENV_MODULE_HPP
+#define XENON__ENV_MODULE_HPP 1
+
 #include "xenon/module/module.hpp"
 
 namespace xenon
@@ -11,3 +14,5 @@ namespace xenon
 [[nodiscard]] Module environmentModule();
 
 } // namespace xenon
+
+#endif // !XENON__ENV_MODULE_HPP

@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__LEXER_HPP
+#define XENON__LEXER_HPP 1
+
 #include <string_view>
 
 namespace xenon
@@ -64,3 +67,5 @@ class Lexer
 };
 
 } // namespace xenon
+
+#endif // !XENON__LEXER_HPP

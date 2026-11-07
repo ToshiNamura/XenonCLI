@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__COMPILER_MODULE_HPP
+#define XENON__COMPILER_MODULE_HPP 1
+
 #include <string>
 #include <vector>
 
@@ -27,3 +30,5 @@ struct ModuleHeader
 };
 
 } // namespace xenon
+
+#endif // !XENON__COMPILER_MODULE_HPP

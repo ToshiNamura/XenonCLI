@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__STRING_HPP
+#define XENON__STRING_HPP 1
+
 #include <string>
 #include <string_view>
 
@@ -47,3 +50,5 @@ class String : public Object
 };
 
 } // namespace xenon
+
+#endif // !XENON__STRING_HPP

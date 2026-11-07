@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__CODEGEN_HPP
+#define XENON__CODEGEN_HPP 1
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -128,3 +131,5 @@ class CodeGenerator
 };
 
 } // namespace xenon
+
+#endif // !XENON__CODEGEN_HPP

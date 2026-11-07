@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__VIRTUAL_STACK_HPP
+#define XENON__VIRTUAL_STACK_HPP 1
+
 #include <cstddef>
 #include <vector>
 
@@ -46,3 +49,5 @@ class VirtualStack
 };
 
 } // namespace xenon
+
+#endif // !XENON__VIRTUAL_STACK_HPP

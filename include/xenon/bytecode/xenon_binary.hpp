@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__XENON_BINARY_HPP
+#define XENON__XENON_BINARY_HPP 1
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -71,3 +74,5 @@ class XenonBinary
 };
 
 } // namespace xenon
+
+#endif // !XENON__XENON_BINARY_HPP

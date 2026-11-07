@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__COMPILER_HPP
+#define XENON__COMPILER_HPP 1
+
 #include <string>
 #include <string_view>
 #include <vector>
@@ -43,3 +46,5 @@ class Compiler
 };
 
 } // namespace xenon
+
+#endif // !XENON__COMPILER_HPP

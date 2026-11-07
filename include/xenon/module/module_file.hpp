@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__MODULE_FILE_HPP
+#define XENON__MODULE_FILE_HPP 1
+
 #include <iosfwd>
 #include <stdexcept>
 #include <string>
@@ -27,3 +30,5 @@ void writeModuleFile(const std::string& path, const Module& module);
 void readModuleFile(const std::string& path, Module& out);
 
 } // namespace xenon
+
+#endif // !XENON__MODULE_FILE_HPP

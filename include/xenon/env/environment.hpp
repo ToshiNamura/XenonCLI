@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__ENVIRONMENT_HPP
+#define XENON__ENVIRONMENT_HPP 1
+
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -43,3 +46,5 @@ class Environment : public Object
 };
 
 } // namespace xenon
+
+#endif // !XENON__ENVIRONMENT_HPP

@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__MODULE_PARSER_HPP
+#define XENON__MODULE_PARSER_HPP 1
+
 #include <string>
 #include <string_view>
 
@@ -36,3 +39,5 @@ class ModuleParser
 };
 
 } // namespace xenon
+
+#endif // !XENON__MODULE_PARSER_HPP

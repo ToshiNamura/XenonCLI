@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__AST_HPP
+#define XENON__AST_HPP 1
+
 #include <memory>
 #include <string>
 #include <utility>
@@ -242,3 +245,5 @@ struct Program
 };
 
 } // namespace xenon
+
+#endif // !XENON__AST_HPP

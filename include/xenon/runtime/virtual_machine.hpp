@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__VIRTUAL_MACHINE_HPP
+#define XENON__VIRTUAL_MACHINE_HPP 1
+
 #include <cstddef>
 #include <functional>
 #include <string>
@@ -97,3 +100,5 @@ class VirtualMachine
 };
 
 } // namespace xenon
+
+#endif // !XENON__VIRTUAL_MACHINE_HPP

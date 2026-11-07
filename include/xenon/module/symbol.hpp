@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__SYMBOL_HPP
+#define XENON__SYMBOL_HPP 1
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -36,3 +39,5 @@ struct Symbol
 };
 
 } // namespace xenon
+
+#endif // !XENON__SYMBOL_HPP

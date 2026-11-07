@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__OBJECT_HPP
+#define XENON__OBJECT_HPP 1
+
 #include <cstddef>
 #include <string>
 
@@ -27,3 +30,5 @@ class Object
 };
 
 } // namespace xenon
+
+#endif // !XENON__OBJECT_HPP

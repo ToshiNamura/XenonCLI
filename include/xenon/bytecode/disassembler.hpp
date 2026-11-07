@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__DISASSEMBLER_HPP
+#define XENON__DISASSEMBLER_HPP 1
+
 #include <iosfwd>
 
 #include "xenon/bytecode/xenon_binary.hpp"
@@ -11,3 +14,5 @@ namespace xenon
 void disassemble(const XenonBinary& binary, std::ostream& os);
 
 } // namespace xenon
+
+#endif // !XENON__DISASSEMBLER_HPP

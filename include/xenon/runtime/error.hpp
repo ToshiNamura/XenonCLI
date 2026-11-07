@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__ERROR_HPP
+#define XENON__ERROR_HPP 1
+
 #include <stdexcept>
 
 namespace xenon
@@ -14,3 +17,5 @@ class RuntimeError : public std::runtime_error
 };
 
 } // namespace xenon
+
+#endif // !XENON__ERROR_HPP

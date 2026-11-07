@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__DEFINES_HPP
+#define XENON__DEFINES_HPP 1
+
 // ---------------------------------------------------------------------------
 // xenon.core — preprocessor definitions shared by the whole project.
 // ---------------------------------------------------------------------------
@@ -17,3 +20,5 @@
 #define XENON_HINT_EXTENSION ".hint"
 #define XENON_MODULE_EXTENSION ".module"
 #define XENON_PACKAGE_EXTENSION ".xenon"
+
+#endif // !XENON__DEFINES_HPP

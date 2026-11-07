@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__HEAP_OBJECT_HPP
+#define XENON__HEAP_OBJECT_HPP 1
+
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -29,3 +32,5 @@ struct HeapObject
 };
 
 } // namespace xenon
+
+#endif // !XENON__HEAP_OBJECT_HPP

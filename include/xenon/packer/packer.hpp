@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__PACKER_HPP
+#define XENON__PACKER_HPP 1
+
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -47,3 +50,5 @@ class Packer
 };
 
 } // namespace xenon
+
+#endif // !XENON__PACKER_HPP

@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__RUNTIME_HPP
+#define XENON__RUNTIME_HPP 1
+
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -125,3 +128,5 @@ class Runtime
 };
 
 } // namespace xenon
+
+#endif // !XENON__RUNTIME_HPP

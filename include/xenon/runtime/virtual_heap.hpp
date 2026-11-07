@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__VIRTUAL_HEAP_HPP
+#define XENON__VIRTUAL_HEAP_HPP 1
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -37,3 +40,5 @@ class VirtualHeap
 };
 
 } // namespace xenon
+
+#endif // !XENON__VIRTUAL_HEAP_HPP

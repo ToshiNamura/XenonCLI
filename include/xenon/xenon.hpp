@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__XENON_HPP
+#define XENON__XENON_HPP 1
+
 // xenon.core — shared definitions, bytecode, values, modules, compiler, executor.
 #include "xenon/core/defines.hpp"
 
@@ -37,3 +40,5 @@
 // xenon — the packer (used by the `xenon` executable).
 #include "xenon/packer/manifest.hpp"
 #include "xenon/packer/packer.hpp"
+
+#endif // !XENON__XENON_HPP

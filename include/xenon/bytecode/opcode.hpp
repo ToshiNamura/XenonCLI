@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__OPCODE_HPP
+#define XENON__OPCODE_HPP 1
+
 #include <cstdint>
 
 namespace xenon
@@ -40,3 +43,5 @@ enum class OpCode : std::uint8_t
 [[nodiscard]] const char* opcodeName(OpCode op);
 
 } // namespace xenon
+
+#endif // !XENON__OPCODE_HPP

@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef XENON__VECTOR_HPP
+#define XENON__VECTOR_HPP 1
+
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -75,3 +78,5 @@ class Vector : public Object
 };
 
 } // namespace xenon
+
+#endif // !XENON__VECTOR_HPP
