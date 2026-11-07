@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "xenon/compiler/ast.hpp"
@@ -53,6 +54,11 @@ class CodeGenerator
     [[nodiscard]] std::string localType(const std::string& name);
     [[nodiscard]] std::size_t resolveField(const Expr& object, const std::string& fieldName);
 
+    [[nodiscard]] std::string substituteType(const std::string& name) const;
+    [[nodiscard]] std::size_t resolveFunction(const std::string& callee);
+    void ensureTypeInstantiated(const std::string& typeName);
+    void emitTypeSymbol(const TypeDecl& decl, const std::string& name, Module& out);
+
     void emitOpcode(OpCode op);
     void emitByte(std::uint8_t byte);
     void emitU16(std::uint16_t value);
@@ -68,8 +74,35 @@ class CodeGenerator
     std::vector<Scope> _scopes;
     std::size_t _slotCounter = 0;
     std::size_t _maxSlots = 0;
+    struct FunctionTemplate
+    {
+        std::vector<std::string> Params;
+        const FunctionDecl* Decl = nullptr;
+    };
+    struct TypeTemplate
+    {
+        std::vector<std::string> Params;
+        const TypeDecl* Decl = nullptr;
+    };
+    struct PendingFunction
+    {
+        std::string Name;
+        const FunctionDecl* Decl = nullptr;
+        std::unordered_map<std::string, std::string> Substitutions;
+    };
+    struct PendingType
+    {
+        std::string Name;
+        const TypeDecl* Decl = nullptr;
+    };
+
     std::unordered_map<std::string, std::size_t> _functionIndices;
     std::unordered_map<std::string, std::vector<std::string>> _typeFields;
+    std::unordered_map<std::string, FunctionTemplate> _functionTemplates;
+    std::unordered_map<std::string, TypeTemplate> _typeTemplates;
+    std::vector<PendingFunction> _pendingFunctions;
+    std::vector<PendingType> _pendingTypes;
+    std::unordered_map<std::string, std::string> _substitutions;
     std::string _error;
 };
 

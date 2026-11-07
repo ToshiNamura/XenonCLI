@@ -31,6 +31,7 @@ class Parser
     [[noreturn]] void fail(const std::string& message);
 
     const Token& advance();
+    const Token& peekNext();
     bool check(TokenType type) const;
     bool match(TokenType type);
     const Token& consume(TokenType type, const std::string& message);
@@ -39,6 +40,7 @@ class Parser
     bool isType(const Token& token) const;
 
     void parseProgram(Program& out);
+    TemplateDecl parseTemplate();
     FunctionDecl parseFunction();
     TypeDecl parseTypeDecl();
     std::string parseType();
@@ -60,6 +62,8 @@ class Parser
     Lexer& _lexer;
     Token _current;
     Token _previous;
+    Token _peek;
+    bool _hasPeek = false;
     std::unordered_set<std::string> _typeNames;
     std::string _error;
 };

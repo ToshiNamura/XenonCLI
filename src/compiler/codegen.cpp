@@ -11,6 +11,62 @@
 
 namespace xenon
 {
+namespace
+{
+
+/// Splits `text` on `sep`, ignoring separators nested inside `<...>`.
+std::vector<std::string> splitTopLevel(const std::string& text, char sep)
+{
+    std::vector<std::string> parts;
+    std::size_t depth = 0;
+    std::size_t start = 0;
+    for (std::size_t i = 0; i < text.size(); ++i)
+    {
+        if (text[i] == '<')
+        {
+            ++depth;
+        }
+        else if (text[i] == '>')
+        {
+            --depth;
+        }
+        else if (text[i] == sep && depth == 0)
+        {
+            parts.push_back(text.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+    parts.push_back(text.substr(start));
+    return parts;
+}
+
+/// Builds a type substitution map for an instantiation `base<args...>`.
+std::unordered_map<std::string, std::string> buildSubstitutions(
+    const std::vector<std::string>& params, const std::string& fullName,
+    const std::string& base, const std::string& selfType)
+{
+    std::unordered_map<std::string, std::string> map;
+    const auto less = fullName.find('<');
+    const auto greater = fullName.rfind('>');
+    if (less == std::string::npos || greater == std::string::npos || greater <= less)
+    {
+        return map;
+    }
+
+    const std::string inner = fullName.substr(less + 1, greater - less - 1);
+    const auto args = splitTopLevel(inner, ',');
+    for (std::size_t i = 0; i < params.size() && i < args.size(); ++i)
+    {
+        map[params[i]] = args[i];
+    }
+    if (!selfType.empty())
+    {
+        map[base] = selfType;
+    }
+    return map;
+}
+
+} // namespace
 
 CodeGenerator::CodeGenerator(const Program& program, const Module& hints, bool hintMode)
     : _program(program), _hints(hints), _hintMode(hintMode)
@@ -45,6 +101,17 @@ CodeGenerator::CodeGenerator(const Program& program, const Module& hints, bool h
             _typeFields[symbol.Name] = symbol.Fields;
         }
     }
+    for (const auto& templ : _program.Templates)
+    {
+        if (templ.IsFunction)
+        {
+            _functionTemplates[templ.Function.Name] = FunctionTemplate{templ.Params, &templ.Function};
+        }
+        else
+        {
+            _typeTemplates[templ.Type.Name] = TypeTemplate{templ.Params, &templ.Type};
+        }
+    }
 }
 
 [[noreturn]] void CodeGenerator::fail(const std::string& message)
@@ -72,6 +139,26 @@ bool CodeGenerator::generate(Module& out)
         {
             out.Symbols.push_back(symbol);
         }
+
+        while (!_pendingFunctions.empty() || !_pendingTypes.empty())
+        {
+            auto functions = std::move(_pendingFunctions);
+            _pendingFunctions.clear();
+            for (const auto& pending : functions)
+            {
+                _substitutions = pending.Substitutions;
+                compileFunction(*pending.Decl, out, pending.Name);
+            }
+            _substitutions.clear();
+
+            auto types = std::move(_pendingTypes);
+            _pendingTypes.clear();
+            for (const auto& pending : types)
+            {
+                emitTypeSymbol(*pending.Decl, pending.Name, out);
+            }
+        }
+
         return true;
     }
     catch (const CodeGenError&)
@@ -177,7 +264,7 @@ void CodeGenerator::declareLocal(const std::string& name, const std::string& typ
     _scopes.back().Names[name] = _slotCounter;
     if (!type.empty())
     {
-        _scopes.back().Types[name] = type;
+        _scopes.back().Types[name] = substituteType(type);
     }
     ++_slotCounter;
     _maxSlots = std::max(_maxSlots, _slotCounter);
@@ -225,6 +312,8 @@ std::size_t CodeGenerator::resolveField(const Expr& object, const std::string& f
         fail("cannot determine the object type for field access");
     }
 
+    ensureTypeInstantiated(typeName);
+
     const auto it = _typeFields.find(typeName);
     if (it == _typeFields.end())
     {
@@ -238,6 +327,115 @@ std::size_t CodeGenerator::resolveField(const Expr& object, const std::string& f
         }
     }
     fail("no such field: " + typeName + "." + fieldName);
+}
+
+std::string CodeGenerator::substituteType(const std::string& name) const
+{
+    const auto it = _substitutions.find(name);
+    return it != _substitutions.end() ? it->second : name;
+}
+
+std::size_t CodeGenerator::resolveFunction(const std::string& callee)
+{
+    const auto existing = _functionIndices.find(callee);
+    if (existing != _functionIndices.end())
+    {
+        return existing->second;
+    }
+
+    const auto separator = callee.rfind("::");
+    if (separator != std::string::npos)
+    {
+        ensureTypeInstantiated(callee.substr(0, separator));
+        const auto after = _functionIndices.find(callee);
+        if (after != _functionIndices.end())
+        {
+            return after->second;
+        }
+    }
+
+    const auto less = callee.find('<');
+    if (less == std::string::npos)
+    {
+        fail("unknown function: " + callee);
+    }
+    const std::string base = callee.substr(0, less);
+    const auto templ = _functionTemplates.find(base);
+    if (templ == _functionTemplates.end())
+    {
+        fail("unknown function: " + callee);
+    }
+
+    const auto index = _functionIndices.size();
+    _functionIndices[callee] = index;
+
+    PendingFunction pending;
+    pending.Name = callee;
+    pending.Decl = templ->second.Decl;
+    pending.Substitutions = buildSubstitutions(templ->second.Params, callee, base, {});
+    _pendingFunctions.push_back(std::move(pending));
+    return index;
+}
+
+void CodeGenerator::ensureTypeInstantiated(const std::string& typeName)
+{
+    if (_typeFields.find(typeName) != _typeFields.end())
+    {
+        return;
+    }
+
+    const auto less = typeName.find('<');
+    if (less == std::string::npos)
+    {
+        return;
+    }
+
+    const auto templ = _typeTemplates.find(typeName.substr(0, less));
+    if (templ == _typeTemplates.end())
+    {
+        return;
+    }
+
+    const TypeDecl* decl = templ->second.Decl;
+
+    std::vector<std::string> fieldNames;
+    for (const auto& field : decl->Fields)
+    {
+        fieldNames.push_back(field.Name);
+    }
+    _typeFields[typeName] = std::move(fieldNames);
+
+    _pendingTypes.push_back(PendingType{typeName, decl});
+
+    const auto substitutions =
+        buildSubstitutions(templ->second.Params, typeName, typeName.substr(0, less), typeName);
+
+    for (const auto& method : decl->Methods)
+    {
+        const std::string mangled = typeName + "::" + method.Name;
+        const auto index = _functionIndices.size();
+        _functionIndices[mangled] = index;
+
+        PendingFunction pending;
+        pending.Name = mangled;
+        pending.Decl = &method;
+        pending.Substitutions = substitutions;
+        _pendingFunctions.push_back(std::move(pending));
+    }
+}
+
+void CodeGenerator::emitTypeSymbol(const TypeDecl& decl, const std::string& name, Module& out)
+{
+    Symbol symbol;
+    symbol.Name = name;
+    symbol.Kind = decl.Kind == DeclKind::Struct ? SymbolKind::Struct : SymbolKind::Class;
+    symbol.Signature = (decl.Kind == DeclKind::Struct ? "struct " : "class ") + name;
+    symbol.Defined = !_hintMode;
+    for (const auto& field : decl.Fields)
+    {
+        symbol.Fields.push_back(field.Name);
+    }
+    out.Symbols.push_back(std::move(symbol));
 }
 
 void CodeGenerator::compileBlock(const BlockStmt& block)
@@ -339,7 +537,9 @@ void CodeGenerator::compileExpression(const Expr& expr)
     }
     if (const auto* n = dynamic_cast<const NewExpr*>(&expr))
     {
-        const auto index = _binary->addString(n->TypeName);
+        const std::string typeName = substituteType(n->TypeName);
+        ensureTypeInstantiated(typeName);
+        const auto index = _binary->addString(typeName);
         emitOpcode(OpCode::New);
         emitByte(static_cast<std::uint8_t>(index));
         return;
@@ -389,13 +589,9 @@ void CodeGenerator::compileExpression(const Expr& expr)
         {
             compileExpression(*arg);
         }
-        const auto it = _functionIndices.find(c->Callee);
-        if (it == _functionIndices.end())
-        {
-            fail("unknown function: " + c->Callee);
-        }
+        const auto index = resolveFunction(c->Callee);
         emitOpcode(OpCode::Call);
-        emitByte(static_cast<std::uint8_t>(it->second));
+        emitByte(static_cast<std::uint8_t>(index));
         return;
     }
     if (const auto* bin = dynamic_cast<const BinaryExpr*>(&expr))

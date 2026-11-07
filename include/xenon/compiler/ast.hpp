@@ -182,10 +182,20 @@ struct TypeDecl
     std::vector<std::string> Enumerators; ///< Enum: enumerator names.
 };
 
+/// A template declaration: type parameters plus a function or type template.
+struct TemplateDecl
+{
+    std::vector<std::string> Params;   ///< Type parameter names.
+    bool IsFunction = false;           ///< True for a function template, false for a type template.
+    FunctionDecl Function;             ///< Function template.
+    TypeDecl Type;                     ///< Type template.
+};
+
 struct Program
 {
     std::vector<FunctionDecl> Functions;
     std::vector<TypeDecl> TypeDecls;
+    std::vector<TemplateDecl> Templates;
 };
 
 } // namespace xenon

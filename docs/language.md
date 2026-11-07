@@ -128,6 +128,37 @@ enum Color
 Перечислители разбираются и сохраняются в модуле; использование значений
 (`Color::Red`) пока не поддерживается.
 
+## Шаблоны
+
+```cpp
+template <typename T>
+struct Box
+{
+    T value;
+};
+
+template <typename T>
+T identity(T x)
+{
+    return x;
+}
+
+double main()
+{
+    Box<double> b = new Box<double>();
+    b.value = identity<double>(5.0);
+    return b.value;
+}
+```
+
+- Объявление: `template <typename T>` (или `class T`) перед функцией или
+  `struct`/`class`.
+- Инстанцирование явное: `Name<Args...>`.
+- Шаблонные функции вызываются как `name<double>(...)`; шаблонные классы —
+  `new Box<double>()`.
+- Не поддерживаются: шаблонные перечисления, шаблонные глобальные переменные,
+  неявный вывод типов (инстанцирование только явное).
+
 ## Файлы `.hint`
 
 Файлы `.hint` содержат объявления без реализации (синтаксис как у C++) —

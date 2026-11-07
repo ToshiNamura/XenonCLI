@@ -218,6 +218,60 @@ double main()
     check(number != nullptr && std::abs(*number - 17.0) < 1e-12, "main() result wrong");
 }
 
+void testTemplates()
+{
+    using namespace xenon;
+
+    const std::string source = R"(
+export module Templates;
+
+template <typename T>
+struct Box
+{
+    T value;
+};
+
+template <typename T>
+T id(T x)
+{
+    return x;
+}
+
+template <typename T>
+struct Pair
+{
+    T first;
+    T second;
+
+    T sum(Pair p)
+    {
+        return p.first + p.second;
+    }
+};
+
+double main()
+{
+    Box<double> b = new Box<double>();
+    b.value = id<double>(3.0);
+
+    Pair<double> p = new Pair<double>();
+    p.first = 4.0;
+    p.second = 5.0;
+
+    return b.value + Pair<double>::sum(p);
+}
+)";
+
+    const auto module = compileOrFail(source, "templates");
+
+    Runtime runtime;
+    runtime.addModule(module);
+    check(runtime.run("main") == InterpretResult::Ok, "run('main') failed");
+
+    const auto* number = std::get_if<double>(&runtime.lastValue());
+    check(number != nullptr && std::abs(*number - 12.0) < 1e-12, "main() result wrong");
+}
+
 void testParseError()
 {
     using namespace xenon;
@@ -247,6 +301,7 @@ int main()
         testBooleanLogic();
         testStringLiteral();
         testClassesAndFields();
+        testTemplates();
         testParseError();
     }
     catch (const std::exception& error)

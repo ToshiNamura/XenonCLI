@@ -27,12 +27,30 @@ Parser::Parser(Lexer& lexer) : _lexer(lexer)
 const Token& Parser::advance()
 {
     _previous = _current;
-    _current = _lexer.next();
+    if (_hasPeek)
+    {
+        _current = _peek;
+        _hasPeek = false;
+    }
+    else
+    {
+        _current = _lexer.next();
+    }
     if (_current.Type == TokenType::Invalid)
     {
         fail("unexpected character '" + std::string(_current.Lexeme) + "'");
     }
     return _previous;
+}
+
+const Token& Parser::peekNext()
+{
+    if (!_hasPeek)
+    {
+        _peek = _lexer.next();
+        _hasPeek = true;
+    }
+    return _peek;
 }
 
 bool Parser::check(TokenType type) const
@@ -105,7 +123,11 @@ void Parser::parseProgram(Program& out)
 {
     while (!check(TokenType::End))
     {
-        if (checkKeyword("struct") || checkKeyword("class") || checkKeyword("enum"))
+        if (checkKeyword("template"))
+        {
+            out.Templates.push_back(parseTemplate());
+        }
+        else if (checkKeyword("struct") || checkKeyword("class") || checkKeyword("enum"))
         {
             out.TypeDecls.push_back(parseTypeDecl());
         }
@@ -114,6 +136,56 @@ void Parser::parseProgram(Program& out)
             out.Functions.push_back(parseFunction());
         }
     }
+}
+
+TemplateDecl Parser::parseTemplate()
+{
+    TemplateDecl templ;
+
+    advance(); // consume 'template'
+    consume(TokenType::Less, "expected '<' after 'template'");
+
+    if (!check(TokenType::Greater))
+    {
+        do
+        {
+            if (!matchKeyword("typename") && !matchKeyword("class"))
+            {
+                fail("expected 'typename' or 'class' in template parameters");
+            }
+            templ.Params.push_back(std::string(
+                consume(TokenType::Identifier, "expected a template parameter name").Lexeme));
+        } while (match(TokenType::Comma));
+    }
+    consume(TokenType::Greater, "expected '>' after template parameters");
+
+    if (checkKeyword("enum"))
+    {
+        fail("template enums are not supported");
+    }
+
+    for (const auto& param : templ.Params)
+    {
+        _typeNames.insert(param);
+    }
+
+    if (checkKeyword("struct") || checkKeyword("class"))
+    {
+        templ.Type = parseTypeDecl();
+        templ.IsFunction = false;
+    }
+    else
+    {
+        templ.Function = parseFunction();
+        templ.IsFunction = true;
+    }
+
+    for (const auto& param : templ.Params)
+    {
+        _typeNames.erase(param);
+    }
+
+    return templ;
 }
 
 FunctionDecl Parser::parseFunction()
@@ -260,8 +332,20 @@ std::string Parser::parseType()
     {
         fail("expected a type");
     }
-    const std::string type(_current.Lexeme);
+    std::string type(_current.Lexeme);
     advance();
+
+    if (match(TokenType::Less))
+    {
+        type += '<';
+        do
+        {
+            type += parseType();
+        } while (match(TokenType::Comma));
+        consume(TokenType::Greater, "expected '>' after template arguments");
+        type += '>';
+    }
+
     return type;
 }
 
@@ -518,8 +602,7 @@ std::unique_ptr<Expr> Parser::parseUnary()
     if (matchKeyword("new"))
     {
         auto expr = std::make_unique<NewExpr>();
-        expr->TypeName =
-            std::string(consume(TokenType::Identifier, "expected a type name after 'new'").Lexeme);
+        expr->TypeName = parseType();
         consume(TokenType::LeftParen, "expected '(' after type name in 'new'");
         consume(TokenType::RightParen, "expected ')' (constructor arguments not supported yet)");
         expr->Line = _previous.Line;
@@ -594,6 +677,29 @@ std::unique_ptr<Expr> Parser::parseCall()
 
             auto target = std::make_unique<VariableExpr>();
             target->Name = variable->Name + "::" + memberName;
+            target->Line = _previous.Line;
+            expr = std::move(target);
+        }
+        else if (check(TokenType::Less))
+        {
+            auto* variable = dynamic_cast<VariableExpr*>(expr.get());
+            if (variable == nullptr || !isType(peekNext()))
+            {
+                break;
+            }
+
+            advance(); // consume '<'
+            std::string name = std::move(variable->Name);
+            name += '<';
+            do
+            {
+                name += parseType();
+            } while (match(TokenType::Comma));
+            consume(TokenType::Greater, "expected '>' after template arguments");
+            name += '>';
+
+            auto target = std::make_unique<VariableExpr>();
+            target->Name = std::move(name);
             target->Line = _previous.Line;
             expr = std::move(target);
         }
