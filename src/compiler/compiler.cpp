@@ -69,7 +69,7 @@ bool Compiler::compileHints(std::string_view source, Module& out)
         return false;
     }
 
-    CodeGenerator codegen(program, Module{});
+    CodeGenerator codegen(program, Module{}, true);
     if (!codegen.generate(out))
     {
         _error = codegen.lastError();

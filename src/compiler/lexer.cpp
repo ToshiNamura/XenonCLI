@@ -233,6 +233,21 @@ Token Lexer::next()
             token.Type = TokenType::Invalid;
         }
         break;
+    case ':':
+        if (peek() == ':')
+        {
+            advance();
+            token.Lexeme = _source.substr(start, 2);
+            token.Type = TokenType::ColonColon;
+        }
+        else
+        {
+            token.Type = TokenType::Invalid;
+        }
+        break;
+    case '.':
+        token.Type = TokenType::Dot;
+        break;
     default:
         token.Type = TokenType::Invalid;
         break;

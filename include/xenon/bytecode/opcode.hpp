@@ -10,6 +10,9 @@ enum class OpCode : std::uint8_t
 {
     Constant,     ///< Push a constant from the chunk's constant pool (1-byte operand).
     String,       ///< Push a string literal as a heap String object (1-byte operand).
+    New,          ///< Allocate an object of the type named in the string pool (1-byte operand).
+    GetField,     ///< Pop an object, push its field (1-byte field-index operand).
+    SetField,     ///< Pop a value and an object, set the field, push the value back (1-byte operand).
     LoadLocal,    ///< Push a local variable (1-byte slot operand).
     StoreLocal,   ///< Pop into a local variable (1-byte slot operand).
     Pop,          ///< Discard the top of the stack.

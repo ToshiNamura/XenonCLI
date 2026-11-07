@@ -32,6 +32,8 @@ enum class TokenType
     GreaterEqual, // >=
     AndAnd,       // &&
     OrOr,         // ||
+    Dot,          // .
+    ColonColon,   // ::
 };
 
 struct Token

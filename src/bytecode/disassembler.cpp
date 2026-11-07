@@ -19,6 +19,9 @@ std::size_t operandSize(OpCode op)
     {
     case OpCode::Constant:
     case OpCode::String:
+    case OpCode::New:
+    case OpCode::GetField:
+    case OpCode::SetField:
     case OpCode::LoadLocal:
     case OpCode::StoreLocal:
     case OpCode::Call:
@@ -62,6 +65,10 @@ void disassemble(const XenonBinary& binary, std::ostream& os)
             else if (op == OpCode::String && operand < strings.size())
             {
                 os << "  ; \"" << strings[operand] << '"';
+            }
+            else if (op == OpCode::New && operand < strings.size())
+            {
+                os << "  ; " << strings[operand];
             }
         }
         else if (operandSize(op) == 2 && offset + 2 < code.size())

@@ -16,7 +16,7 @@ namespace xenon
 class CodeGenerator
 {
   public:
-    CodeGenerator(const Program& program, const Module& hints);
+    CodeGenerator(const Program& program, const Module& hints, bool hintMode = false);
 
     /// Generates bytecode into `out`. Returns `true` on success.
     bool generate(Module& out);
@@ -34,12 +34,13 @@ class CodeGenerator
     struct Scope
     {
         std::unordered_map<std::string, std::size_t> Names;
+        std::unordered_map<std::string, std::string> Types;
         std::size_t BaseSlot = 0;
     };
 
     [[noreturn]] void fail(const std::string& message);
 
-    void compileFunction(const FunctionDecl& function, Module& out);
+    void compileFunction(const FunctionDecl& function, Module& out, const std::string& qualifiedName = {});
     void compileTypeDecl(const TypeDecl& decl, Module& out);
     void compileStatement(const Stmt& stmt);
     void compileBlock(const BlockStmt& block);
@@ -47,8 +48,10 @@ class CodeGenerator
 
     void enterScope();
     void leaveScope();
-    void declareLocal(const std::string& name);
+    void declareLocal(const std::string& name, const std::string& type = {});
     [[nodiscard]] std::size_t resolveLocal(const std::string& name);
+    [[nodiscard]] std::string localType(const std::string& name);
+    [[nodiscard]] std::size_t resolveField(const Expr& object, const std::string& fieldName);
 
     void emitOpcode(OpCode op);
     void emitByte(std::uint8_t byte);
@@ -60,11 +63,13 @@ class CodeGenerator
 
     const Program& _program;
     Module _hints;
+    bool _hintMode = false;
     XenonBinary* _binary = nullptr;
     std::vector<Scope> _scopes;
     std::size_t _slotCounter = 0;
     std::size_t _maxSlots = 0;
     std::unordered_map<std::string, std::size_t> _functionIndices;
+    std::unordered_map<std::string, std::vector<std::string>> _typeFields;
     std::string _error;
 };
 

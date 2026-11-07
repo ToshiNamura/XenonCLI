@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "xenon/bytecode/xenon_binary.hpp"
 
@@ -29,6 +30,8 @@ struct Symbol
     std::size_t Locals = 0;       ///< `Function`: local slots beyond parameters.
     bool Defined = true;          ///< False for `.hint` declarations without a body.
     XenonBinary Body;             ///< Packed executable body; meaningful for `Function`.
+    std::vector<std::string> Fields;      ///< Class/Struct: ordered field names.
+    std::vector<std::string> Enumerators; ///< Enum: enumerator names.
 };
 
 } // namespace xenon

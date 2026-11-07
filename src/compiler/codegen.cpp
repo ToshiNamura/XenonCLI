@@ -12,19 +12,37 @@
 namespace xenon
 {
 
-CodeGenerator::CodeGenerator(const Program& program, const Module& hints)
-    : _program(program), _hints(hints)
+CodeGenerator::CodeGenerator(const Program& program, const Module& hints, bool hintMode)
+    : _program(program), _hints(hints), _hintMode(hintMode)
 {
     std::size_t index = 0;
     for (const auto& function : _program.Functions)
     {
         _functionIndices[function.Name] = index++;
     }
+    for (const auto& decl : _program.TypeDecls)
+    {
+        std::vector<std::string> fieldNames;
+        for (const auto& field : decl.Fields)
+        {
+            fieldNames.push_back(field.Name);
+        }
+        _typeFields[decl.Name] = std::move(fieldNames);
+
+        for (const auto& method : decl.Methods)
+        {
+            _functionIndices[decl.Name + "::" + method.Name] = index++;
+        }
+    }
     for (const auto& symbol : _hints.Symbols)
     {
         if (symbol.Kind == SymbolKind::Function)
         {
             _functionIndices[symbol.Name] = index++;
+        }
+        else if (symbol.Kind == SymbolKind::Struct || symbol.Kind == SymbolKind::Class)
+        {
+            _typeFields[symbol.Name] = symbol.Fields;
         }
     }
 }
@@ -62,13 +80,16 @@ bool CodeGenerator::generate(Module& out)
     }
 }
 
-void CodeGenerator::compileFunction(const FunctionDecl& function, Module& out)
+void CodeGenerator::compileFunction(const FunctionDecl& function, Module& out,
+                                    const std::string& qualifiedName)
 {
+    const std::string& name = qualifiedName.empty() ? function.Name : qualifiedName;
+
     Symbol symbol;
-    symbol.Name = function.Name;
+    symbol.Name = name;
     symbol.Kind = SymbolKind::Function;
     symbol.Signature = function.ReturnType.empty() ? "void " : function.ReturnType + " ";
-    symbol.Signature += function.Name;
+    symbol.Signature += name;
     symbol.Signature += "(";
     for (std::size_t i = 0; i < function.Params.size(); ++i)
     {
@@ -96,7 +117,7 @@ void CodeGenerator::compileFunction(const FunctionDecl& function, Module& out)
     enterScope();
     for (const auto& param : function.Params)
     {
-        declareLocal(param.second);
+        declareLocal(param.second, param.first);
     }
     compileBlock(*function.Body);
 
@@ -116,13 +137,33 @@ void CodeGenerator::compileTypeDecl(const TypeDecl& decl, Module& out)
                   : decl.Kind == DeclKind::Class ? SymbolKind::Class
                                                  : SymbolKind::Enum;
     symbol.Signature = decl.Signature;
-    symbol.Defined = false;
+    symbol.Defined = !_hintMode;
+
+    if (decl.Kind == DeclKind::Enum)
+    {
+        symbol.Enumerators = decl.Enumerators;
+    }
+    else
+    {
+        for (const auto& field : decl.Fields)
+        {
+            symbol.Fields.push_back(field.Name);
+        }
+    }
     out.Symbols.push_back(std::move(symbol));
+
+    if (decl.Kind != DeclKind::Enum)
+    {
+        for (const auto& method : decl.Methods)
+        {
+            compileFunction(method, out, decl.Name + "::" + method.Name);
+        }
+    }
 }
 
 void CodeGenerator::enterScope()
 {
-    _scopes.push_back(Scope{{}, _slotCounter});
+    _scopes.push_back(Scope{{}, {}, _slotCounter});
 }
 
 void CodeGenerator::leaveScope()
@@ -131,9 +172,13 @@ void CodeGenerator::leaveScope()
     _scopes.pop_back();
 }
 
-void CodeGenerator::declareLocal(const std::string& name)
+void CodeGenerator::declareLocal(const std::string& name, const std::string& type)
 {
     _scopes.back().Names[name] = _slotCounter;
+    if (!type.empty())
+    {
+        _scopes.back().Types[name] = type;
+    }
     ++_slotCounter;
     _maxSlots = std::max(_maxSlots, _slotCounter);
 }
@@ -149,6 +194,50 @@ std::size_t CodeGenerator::resolveLocal(const std::string& name)
         }
     }
     fail("undefined variable: " + name);
+}
+
+std::string CodeGenerator::localType(const std::string& name)
+{
+    for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it)
+    {
+        const auto found = it->Types.find(name);
+        if (found != it->Types.end())
+        {
+            return found->second;
+        }
+    }
+    fail("unknown variable type for: " + name);
+}
+
+std::size_t CodeGenerator::resolveField(const Expr& object, const std::string& fieldName)
+{
+    std::string typeName;
+    if (const auto* variable = dynamic_cast<const VariableExpr*>(&object))
+    {
+        typeName = localType(variable->Name);
+    }
+    else if (const auto* created = dynamic_cast<const NewExpr*>(&object))
+    {
+        typeName = created->TypeName;
+    }
+    else
+    {
+        fail("cannot determine the object type for field access");
+    }
+
+    const auto it = _typeFields.find(typeName);
+    if (it == _typeFields.end())
+    {
+        fail("unknown type: " + typeName);
+    }
+    for (std::size_t i = 0; i < it->second.size(); ++i)
+    {
+        if (it->second[i] == fieldName)
+        {
+            return i;
+        }
+    }
+    fail("no such field: " + typeName + "." + fieldName);
 }
 
 void CodeGenerator::compileBlock(const BlockStmt& block)
@@ -174,7 +263,7 @@ void CodeGenerator::compileStatement(const Stmt& stmt)
         {
             compileExpression(*v->Init);
         }
-        declareLocal(v->Name);
+        declareLocal(v->Name, v->Type);
         if (v->Init)
         {
             emitOpcode(OpCode::StoreLocal);
@@ -246,6 +335,30 @@ void CodeGenerator::compileExpression(const Expr& expr)
     if (const auto* s = dynamic_cast<const StringExpr*>(&expr))
     {
         emitString(s->Value);
+        return;
+    }
+    if (const auto* n = dynamic_cast<const NewExpr*>(&expr))
+    {
+        const auto index = _binary->addString(n->TypeName);
+        emitOpcode(OpCode::New);
+        emitByte(static_cast<std::uint8_t>(index));
+        return;
+    }
+    if (const auto* f = dynamic_cast<const FieldAccessExpr*>(&expr))
+    {
+        compileExpression(*f->Object);
+        const auto index = resolveField(*f->Object, f->FieldName);
+        emitOpcode(OpCode::GetField);
+        emitByte(static_cast<std::uint8_t>(index));
+        return;
+    }
+    if (const auto* fa = dynamic_cast<const FieldAssignExpr*>(&expr))
+    {
+        compileExpression(*fa->Object);
+        compileExpression(*fa->Value);
+        const auto index = resolveField(*fa->Object, fa->FieldName);
+        emitOpcode(OpCode::SetField);
+        emitByte(static_cast<std::uint8_t>(index));
         return;
     }
     if (const auto* v = dynamic_cast<const VariableExpr*>(&expr))

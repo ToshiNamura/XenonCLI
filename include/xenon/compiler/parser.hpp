@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 
 #include "xenon/compiler/ast.hpp"
 #include "xenon/compiler/lexer.hpp"
@@ -59,6 +60,7 @@ class Parser
     Lexer& _lexer;
     Token _current;
     Token _previous;
+    std::unordered_set<std::string> _typeNames;
     std::string _error;
 };
 

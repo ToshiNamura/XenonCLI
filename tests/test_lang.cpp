@@ -170,6 +170,54 @@ string greet()
     }
 }
 
+void testClassesAndFields()
+{
+    using namespace xenon;
+
+    const std::string source = R"(
+export module Shapes;
+
+struct Point
+{
+    double x;
+    double y;
+};
+
+struct Rect
+{
+    double w;
+    double h;
+
+    double area(Rect r)
+    {
+        return r.w * r.h;
+    }
+};
+
+double main()
+{
+    Point p = new Point();
+    p.x = 3.0;
+    p.y = 4.0;
+
+    Rect r = new Rect();
+    r.w = 2.0;
+    r.h = 5.0;
+
+    return p.x + p.y + Rect::area(r);
+}
+)";
+
+    const auto module = compileOrFail(source, "classes and fields");
+
+    Runtime runtime;
+    runtime.addModule(module);
+    check(runtime.run("main") == InterpretResult::Ok, "run('main') failed");
+
+    const auto* number = std::get_if<double>(&runtime.lastValue());
+    check(number != nullptr && std::abs(*number - 17.0) < 1e-12, "main() result wrong");
+}
+
 void testParseError()
 {
     using namespace xenon;
@@ -198,6 +246,7 @@ int main()
         testLocalsAndControlFlow();
         testBooleanLogic();
         testStringLiteral();
+        testClassesAndFields();
         testParseError();
     }
     catch (const std::exception& error)

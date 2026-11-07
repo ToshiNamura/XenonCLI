@@ -85,6 +85,24 @@ struct CallExpr : Expr
     std::vector<std::unique_ptr<Expr>> Args;
 };
 
+struct NewExpr : Expr
+{
+    std::string TypeName;
+};
+
+struct FieldAccessExpr : Expr
+{
+    std::unique_ptr<Expr> Object;
+    std::string FieldName;
+};
+
+struct FieldAssignExpr : Expr
+{
+    std::unique_ptr<Expr> Object;
+    std::string FieldName;
+    std::unique_ptr<Expr> Value;
+};
+
 // ---- statements ----
 
 struct Stmt
@@ -148,11 +166,20 @@ enum class DeclKind
     Enum,
 };
 
+struct FieldDecl
+{
+    std::string Type;
+    std::string Name;
+};
+
 struct TypeDecl
 {
     DeclKind Kind = DeclKind::Struct;
     std::string Name;
     std::string Signature;
+    std::vector<FieldDecl> Fields;        ///< Struct/Class: field declarations.
+    std::vector<FunctionDecl> Methods;    ///< Struct/Class: methods.
+    std::vector<std::string> Enumerators; ///< Enum: enumerator names.
 };
 
 struct Program

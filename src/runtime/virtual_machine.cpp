@@ -267,6 +267,83 @@ void VirtualMachine::execute(VirtualStack& stack)
             break;
         }
 
+        case OpCode::New:
+        {
+            const auto index = readByte();
+            const auto& strings = binary.strings();
+            if (index >= strings.size())
+            {
+                throw RuntimeError("type index out of range");
+            }
+            if (_heap == nullptr)
+            {
+                throw RuntimeError("no heap available");
+            }
+            const Symbol* classSymbol = find(strings[index]);
+            if (classSymbol == nullptr ||
+                (classSymbol->Kind != SymbolKind::Struct && classSymbol->Kind != SymbolKind::Class))
+            {
+                throw RuntimeError("unknown type: " + strings[index]);
+            }
+            const Ref ref = _heap->allocate(ObjectKind::Object, strings[index]);
+            HeapObject* object = _heap->get(ref);
+            for (const auto& field : classSymbol->Fields)
+            {
+                object->Fields[field] = Null{};
+            }
+            push(Value{ref});
+            break;
+        }
+
+        case OpCode::GetField:
+        {
+            const auto index = readByte();
+            const Value objectValue = pop();
+            const auto* ref = std::get_if<Ref>(&objectValue);
+            if (ref == nullptr || _heap == nullptr)
+            {
+                throw RuntimeError("GetField on a non-object");
+            }
+            const HeapObject* object = _heap->get(*ref);
+            if (object == nullptr || object->Kind != ObjectKind::Object)
+            {
+                throw RuntimeError("GetField on a non-object");
+            }
+            const Symbol* classSymbol = find(object->ClassName);
+            if (classSymbol == nullptr || index >= classSymbol->Fields.size())
+            {
+                throw RuntimeError("field index out of range");
+            }
+            const auto field = object->Fields.find(classSymbol->Fields[index]);
+            push(field != object->Fields.end() ? field->second : Value{Null{}});
+            break;
+        }
+
+        case OpCode::SetField:
+        {
+            const auto index = readByte();
+            const Value value = pop();
+            const Value objectValue = pop();
+            const auto* ref = std::get_if<Ref>(&objectValue);
+            if (ref == nullptr || _heap == nullptr)
+            {
+                throw RuntimeError("SetField on a non-object");
+            }
+            HeapObject* object = _heap->get(*ref);
+            if (object == nullptr || object->Kind != ObjectKind::Object)
+            {
+                throw RuntimeError("SetField on a non-object");
+            }
+            const Symbol* classSymbol = find(object->ClassName);
+            if (classSymbol == nullptr || index >= classSymbol->Fields.size())
+            {
+                throw RuntimeError("field index out of range");
+            }
+            object->Fields[classSymbol->Fields[index]] = value;
+            push(value);
+            break;
+        }
+
         case OpCode::LoadLocal:
         {
             const auto slot = readByte();

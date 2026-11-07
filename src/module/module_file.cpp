@@ -17,7 +17,7 @@ namespace
 {
 
 constexpr char Magic[4] = {'X', 'E', 'N', 'M'};
-constexpr std::uint32_t Version = 2;
+constexpr std::uint32_t Version = 3;
 
 constexpr std::uint32_t MaxCount = 1u << 22;
 
@@ -274,6 +274,16 @@ void writeModuleFile(std::ostream& os, const Module& module)
         writeU32(os, static_cast<std::uint32_t>(symbol.Arity));
         writeU32(os, static_cast<std::uint32_t>(symbol.Locals));
         writeBinary(os, symbol.Body);
+        writeU32(os, static_cast<std::uint32_t>(symbol.Fields.size()));
+        for (const auto& field : symbol.Fields)
+        {
+            writeString(os, field);
+        }
+        writeU32(os, static_cast<std::uint32_t>(symbol.Enumerators.size()));
+        for (const auto& enumerator : symbol.Enumerators)
+        {
+            writeString(os, enumerator);
+        }
     }
 }
 
@@ -328,6 +338,23 @@ void readModuleFile(std::istream& is, Module& out)
         symbol.Arity = readU32(is);
         symbol.Locals = readU32(is);
         symbol.Body = readBinary(is);
+
+        const auto fieldCount = readU32(is);
+        checkCount(fieldCount);
+        symbol.Fields.reserve(fieldCount);
+        for (std::uint32_t f = 0; f < fieldCount; ++f)
+        {
+            symbol.Fields.emplace_back(readString(is));
+        }
+
+        const auto enumeratorCount = readU32(is);
+        checkCount(enumeratorCount);
+        symbol.Enumerators.reserve(enumeratorCount);
+        for (std::uint32_t e = 0; e < enumeratorCount; ++e)
+        {
+            symbol.Enumerators.emplace_back(readString(is));
+        }
+
         out.Symbols.push_back(std::move(symbol));
     }
 }

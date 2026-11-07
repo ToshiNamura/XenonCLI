@@ -80,8 +80,12 @@ bool Parser::isType(const Token& token) const
     {
         return false;
     }
-    return token.Lexeme == "int" || token.Lexeme == "double" || token.Lexeme == "bool" ||
-           token.Lexeme == "string" || token.Lexeme == "void";
+    if (token.Lexeme == "int" || token.Lexeme == "double" || token.Lexeme == "bool" ||
+        token.Lexeme == "string" || token.Lexeme == "void")
+    {
+        return true;
+    }
+    return _typeNames.contains(std::string(token.Lexeme));
 }
 
 bool Parser::parse(Program& out)
@@ -158,30 +162,95 @@ TypeDecl Parser::parseTypeDecl()
                                      : DeclKind::Enum;
 
     decl.Name = std::string(consume(TokenType::Identifier, "expected a type name").Lexeme);
+    _typeNames.insert(decl.Name);
 
-    std::string signature = keyword + " " + decl.Name;
-    if (match(TokenType::LeftBrace))
+    decl.Signature = keyword + " " + decl.Name;
+
+    if (decl.Kind == DeclKind::Enum)
     {
-        int depth = 1;
-        while (depth > 0 && !check(TokenType::End))
+        consume(TokenType::LeftBrace, "expected '{' after enum name");
+        if (!check(TokenType::RightBrace))
         {
-            if (match(TokenType::LeftBrace))
+            do
             {
-                ++depth;
+                decl.Enumerators.push_back(std::string(
+                    consume(TokenType::Identifier, "expected an enumerator name").Lexeme));
+            } while (match(TokenType::Comma));
+        }
+        consume(TokenType::RightBrace, "expected '}' after enumerators");
+        consume(TokenType::Semicolon, "expected ';' after enum");
+        return decl;
+    }
+
+    consume(TokenType::LeftBrace, "expected '{' after type name");
+
+    while (!check(TokenType::RightBrace) && !check(TokenType::End))
+    {
+        const std::string memberType = parseType();
+        const std::string memberName =
+            std::string(consume(TokenType::Identifier, "expected a member name").Lexeme);
+
+        if (match(TokenType::LeftParen))
+        {
+            FunctionDecl method;
+            method.ReturnType = memberType;
+            method.Name = memberName;
+
+            if (!check(TokenType::RightParen))
+            {
+                do
+                {
+                    const std::string paramType = parseType();
+                    const std::string paramName = std::string(
+                        consume(TokenType::Identifier, "expected a parameter name").Lexeme);
+                    method.Params.emplace_back(paramType, paramName);
+                } while (match(TokenType::Comma));
             }
-            else if (match(TokenType::RightBrace))
+            consume(TokenType::RightParen, "expected ')' after parameters");
+
+            if (check(TokenType::LeftBrace))
             {
-                --depth;
+                method.HasBody = true;
+                method.Body = parseBlock();
             }
             else
             {
-                advance();
+                method.HasBody = false;
+                consume(TokenType::Semicolon, "expected '{' or ';' after method signature");
             }
+            decl.Methods.push_back(std::move(method));
         }
-        signature += " { ... }";
+        else
+        {
+            decl.Fields.push_back(FieldDecl{memberType, memberName});
+            if (match(TokenType::Assign))
+            {
+                while (!check(TokenType::Semicolon) && !check(TokenType::Comma) &&
+                       !check(TokenType::End))
+                {
+                    advance();
+                }
+            }
+            while (match(TokenType::Comma))
+            {
+                const std::string name = std::string(
+                    consume(TokenType::Identifier, "expected a field name").Lexeme);
+                decl.Fields.push_back(FieldDecl{memberType, name});
+                if (match(TokenType::Assign))
+                {
+                    while (!check(TokenType::Semicolon) && !check(TokenType::Comma) &&
+                           !check(TokenType::End))
+                    {
+                        advance();
+                    }
+                }
+            }
+            consume(TokenType::Semicolon, "expected ';' after field declaration");
+        }
     }
-    consume(TokenType::Semicolon, "expected ';' after declaration");
-    decl.Signature = signature;
+
+    consume(TokenType::RightBrace, "expected '}' after type body");
+    consume(TokenType::Semicolon, "expected ';' after type declaration");
     return decl;
 }
 
@@ -298,16 +367,24 @@ std::unique_ptr<Expr> Parser::parseAssignment()
 
     if (match(TokenType::Assign))
     {
-        auto* variable = dynamic_cast<VariableExpr*>(expr.get());
-        if (variable == nullptr)
+        if (auto* variable = dynamic_cast<VariableExpr*>(expr.get()))
         {
-            fail("invalid assignment target");
+            auto assign = std::make_unique<AssignExpr>();
+            assign->Line = _previous.Line;
+            assign->Name = std::move(variable->Name);
+            assign->Value = parseAssignment();
+            return assign;
         }
-        auto assign = std::make_unique<AssignExpr>();
-        assign->Line = _previous.Line;
-        assign->Name = std::move(variable->Name);
-        assign->Value = parseAssignment();
-        return assign;
+        if (auto* field = dynamic_cast<FieldAccessExpr*>(expr.get()))
+        {
+            auto assign = std::make_unique<FieldAssignExpr>();
+            assign->Line = _previous.Line;
+            assign->Object = std::move(field->Object);
+            assign->FieldName = std::move(field->FieldName);
+            assign->Value = parseAssignment();
+            return assign;
+        }
+        fail("invalid assignment target");
     }
 
     return expr;
@@ -438,6 +515,16 @@ std::unique_ptr<Expr> Parser::parseFactor()
 
 std::unique_ptr<Expr> Parser::parseUnary()
 {
+    if (matchKeyword("new"))
+    {
+        auto expr = std::make_unique<NewExpr>();
+        expr->TypeName =
+            std::string(consume(TokenType::Identifier, "expected a type name after 'new'").Lexeme);
+        consume(TokenType::LeftParen, "expected '(' after type name in 'new'");
+        consume(TokenType::RightParen, "expected ')' (constructor arguments not supported yet)");
+        expr->Line = _previous.Line;
+        return expr;
+    }
     if (match(TokenType::Minus))
     {
         auto unary = std::make_unique<UnaryExpr>();
@@ -461,28 +548,59 @@ std::unique_ptr<Expr> Parser::parseCall()
 {
     auto expr = parsePrimary();
 
-    while (match(TokenType::LeftParen))
+    while (true)
     {
-        auto* variable = dynamic_cast<VariableExpr*>(expr.get());
-        if (variable == nullptr)
+        if (match(TokenType::LeftParen))
         {
-            fail("only named functions can be called");
-        }
-
-        auto call = std::make_unique<CallExpr>();
-        call->Callee = std::move(variable->Name);
-        call->Line = _previous.Line;
-
-        if (!check(TokenType::RightParen))
-        {
-            do
+            auto* variable = dynamic_cast<VariableExpr*>(expr.get());
+            if (variable == nullptr)
             {
-                call->Args.push_back(parseExpression());
-            } while (match(TokenType::Comma));
-        }
-        consume(TokenType::RightParen, "expected ')' after arguments");
+                fail("only named functions and types can be called");
+            }
 
-        expr = std::move(call);
+            auto call = std::make_unique<CallExpr>();
+            call->Callee = std::move(variable->Name);
+            call->Line = _previous.Line;
+
+            if (!check(TokenType::RightParen))
+            {
+                do
+                {
+                    call->Args.push_back(parseExpression());
+                } while (match(TokenType::Comma));
+            }
+            consume(TokenType::RightParen, "expected ')' after arguments");
+
+            expr = std::move(call);
+        }
+        else if (match(TokenType::Dot))
+        {
+            auto access = std::make_unique<FieldAccessExpr>();
+            access->Object = std::move(expr);
+            access->FieldName =
+                std::string(consume(TokenType::Identifier, "expected a field name").Lexeme);
+            access->Line = _previous.Line;
+            expr = std::move(access);
+        }
+        else if (match(TokenType::ColonColon))
+        {
+            auto* variable = dynamic_cast<VariableExpr*>(expr.get());
+            if (variable == nullptr)
+            {
+                fail("expected a type or module name before '::'");
+            }
+            const std::string memberName =
+                std::string(consume(TokenType::Identifier, "expected a member name").Lexeme);
+
+            auto target = std::make_unique<VariableExpr>();
+            target->Name = variable->Name + "::" + memberName;
+            target->Line = _previous.Line;
+            expr = std::move(target);
+        }
+        else
+        {
+            break;
+        }
     }
 
     return expr;
