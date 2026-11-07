@@ -74,9 +74,8 @@ gh issue view 12 --repo ToshiNamura/XenonCLI
 # create (always add at least one label)
 gh issue create --repo ToshiNamura/XenonCLI --title "Title" --body "Description" --label bug
 
-# manage labels
+# list available labels
 gh label list --repo ToshiNamura/XenonCLI
-gh label create bug --repo ToshiNamura/XenonCLI --description "Something is broken"
 
 # comment
 gh issue comment 12 --repo ToshiNamura/XenonCLI --body "Comment text"
@@ -125,12 +124,14 @@ curl.exe $h 'https://api.github.com/search/issues?q=repo:ToshiNamura/XenonCLI+bu
 - Before creating an issue, confirm the title and description with the user if
   they were not provided explicitly.
 - **Always add labels** when creating an issue (and when updating, if useful).
-  Use the label convention below; create the label first if it is missing:
-  - `bug` — something is broken or does not work
-  - `feature` — new functionality
-  - `enhancement` — improvement of existing behavior
-  - `docs` — documentation
-  - `roadmap` — item from ROADMAP.md
+  The repository uses the standard GitHub label set — pick the most relevant:
+  - `bug` — Something isn't working
+  - `enhancement` — New feature or request
+  - `documentation` — Improvements or additions to documentation
+  - `question` — Further information is requested
+  - `help wanted` — Extra attention is needed
+  - `good first issue` — Good for newcomers
+  (Labels already exist in the repo; check `gh label list` before adding.)
 - Use Markdown for the issue body; include code snippets in fenced blocks.
 - When replying to an issue, be concise; match the language used in the issue.
 - Never print token values in chat; tokens are secrets handled only by the user.
