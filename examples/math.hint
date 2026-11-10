@@ -7,13 +7,13 @@ double pow(double base, double exp);
 
 struct Point
 {
-    double x;
-    double y;
+	double x;
+	double y;
 };
 
 enum Color
 {
-    Red,
-    Green,
-    Blue,
+	Red,
+	Green,
+	Blue,
 };

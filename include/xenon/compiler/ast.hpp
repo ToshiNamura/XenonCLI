@@ -10,240 +10,233 @@
 
 namespace xenon
 {
+	// ---- expressions ----
+	struct Expr
+	{
+		virtual ~Expr() = default;
 
-// ---- expressions ----
+		int Line = 0;
+	};
 
-struct Expr
-{
-    virtual ~Expr() = default;
-    int Line = 0;
-};
+	struct NumberExpr : Expr
+	{
+		double Value = 0.0;
+	};
 
-struct NumberExpr : Expr
-{
-    double Value = 0.0;
-};
+	struct BoolExpr : Expr
+	{
+		bool Value = false;
+	};
 
-struct BoolExpr : Expr
-{
-    bool Value = false;
-};
+	struct StringExpr : Expr
+	{
+		std::string Value;
+	};
 
-struct StringExpr : Expr
-{
-    std::string Value;
-};
+	struct NullExpr : Expr { };
 
-struct NullExpr : Expr
-{
-};
+	struct VariableExpr : Expr
+	{
+		std::string Name;
+	};
 
-struct VariableExpr : Expr
-{
-    std::string Name;
-};
+	struct UnaryExpr : Expr
+	{
+		enum class Op
+		{
+			Negate,
+			Not,
+		};
 
-struct UnaryExpr : Expr
-{
-    enum class Op
-    {
-        Negate,
-        Not,
-    };
-    Op Operation = Op::Negate;
-    std::unique_ptr<Expr> Operand;
-};
+		Op                    Operation = Op::Negate;
+		std::unique_ptr<Expr> Operand;
+	};
 
-struct BinaryExpr : Expr
-{
-    enum class Op
-    {
-        Add,
-        Subtract,
-        Multiply,
-        Divide,
-        Equal,
-        NotEqual,
-        Less,
-        LessEqual,
-        Greater,
-        GreaterEqual,
-        And,
-        Or,
-    };
-    Op Operation = Op::Add;
-    std::unique_ptr<Expr> Left;
-    std::unique_ptr<Expr> Right;
-};
+	struct BinaryExpr : Expr
+	{
+		enum class Op
+		{
+			Add,
+			Subtract,
+			Multiply,
+			Divide,
+			Equal,
+			NotEqual,
+			Less,
+			LessEqual,
+			Greater,
+			GreaterEqual,
+			And,
+			Or,
+		};
 
-struct AssignExpr : Expr
-{
-    std::string Name;
-    std::unique_ptr<Expr> Value;
-};
+		Op                    Operation = Op::Add;
+		std::unique_ptr<Expr> Left;
+		std::unique_ptr<Expr> Right;
+	};
 
-struct CallExpr : Expr
-{
-    std::string Callee;
-    std::vector<std::unique_ptr<Expr>> Args;
-};
+	struct AssignExpr : Expr
+	{
+		std::string           Name;
+		std::unique_ptr<Expr> Value;
+	};
 
-struct NewExpr : Expr
-{
-    std::string TypeName;
-};
+	struct CallExpr : Expr
+	{
+		std::string                        Callee;
+		std::vector<std::unique_ptr<Expr>> Args;
+	};
 
-struct FieldAccessExpr : Expr
-{
-    std::unique_ptr<Expr> Object;
-    std::string FieldName;
-};
+	struct NewExpr : Expr
+	{
+		std::string TypeName;
+	};
 
-struct FieldAssignExpr : Expr
-{
-    std::unique_ptr<Expr> Object;
-    std::string FieldName;
-    std::unique_ptr<Expr> Value;
-};
+	struct FieldAccessExpr : Expr
+	{
+		std::unique_ptr<Expr> Object;
+		std::string           FieldName;
+	};
 
-// ---- statements ----
+	struct FieldAssignExpr : Expr
+	{
+		std::unique_ptr<Expr> Object;
+		std::unique_ptr<Expr> Value;
+		std::string           FieldName;
+	};
 
-struct Stmt
-{
-    virtual ~Stmt() = default;
-    int Line = 0;
-};
+	// ---- statements ----
+	struct Stmt
+	{
+		virtual ~Stmt() = default;
 
-struct ExprStmt : Stmt
-{
-    std::unique_ptr<Expr> Expr;
-};
+		int Line = 0;
+	};
 
-struct VarDeclStmt : Stmt
-{
-    std::string Type;
-    std::string Name;
-    std::unique_ptr<Expr> Init; // may be null
-};
+	struct ExprStmt : Stmt
+	{
+		std::unique_ptr<Expr> Expr;
+	};
 
-struct ReturnStmt : Stmt
-{
-    std::unique_ptr<Expr> Value; // may be null (void)
-};
+	struct VarDeclStmt : Stmt
+	{
+		std::string           Type;
+		std::string           Name;
+		std::unique_ptr<Expr> Init; // may be null
+	};
 
-struct BlockStmt : Stmt
-{
-    std::vector<std::unique_ptr<Stmt>> Statements;
-};
+	struct ReturnStmt : Stmt
+	{
+		std::unique_ptr<Expr> Value; // may be null (void)
+	};
 
-struct IfStmt : Stmt
-{
-    std::unique_ptr<Expr> Condition;
-    std::unique_ptr<Stmt> ThenBranch;
-    std::unique_ptr<Stmt> ElseBranch; // may be null
-};
+	struct BlockStmt : Stmt
+	{
+		std::vector<std::unique_ptr<Stmt>> Statements;
+	};
 
-struct WhileStmt : Stmt
-{
-    std::unique_ptr<Expr> Condition;
-    std::unique_ptr<Stmt> Body;
-};
+	struct IfStmt : Stmt
+	{
+		std::unique_ptr<Expr> Condition;
+		std::unique_ptr<Stmt> ThenBranch;
+		std::unique_ptr<Stmt> ElseBranch; // may be null
+	};
 
-struct DoWhileStmt : Stmt
-{
-    std::unique_ptr<Expr> Condition;
-    std::unique_ptr<Stmt> Body;
-};
+	struct WhileStmt : Stmt
+	{
+		std::unique_ptr<Expr> Condition;
+		std::unique_ptr<Stmt> Body;
+	};
 
-struct ForStmt : Stmt
-{
-    std::unique_ptr<Stmt> Init;      // may be null
-    std::unique_ptr<Expr> Condition; // may be null
-    std::unique_ptr<Expr> Increment; // may be null
-    std::unique_ptr<Stmt> Body;
-};
+	struct DoWhileStmt : Stmt
+	{
+		std::unique_ptr<Expr> Condition;
+		std::unique_ptr<Stmt> Body;
+	};
 
-struct BreakStmt : Stmt
-{
-};
+	struct ForStmt : Stmt
+	{
+		std::unique_ptr<Stmt> Init;      // may be null
+		std::unique_ptr<Expr> Condition; // may be null
+		std::unique_ptr<Expr> Increment; // may be null
+		std::unique_ptr<Stmt> Body;
+	};
 
-struct ContinueStmt : Stmt
-{
-};
+	struct BreakStmt : Stmt { };
 
-struct CaseClause
-{
-    std::unique_ptr<Expr> Value; // null = default
-    std::vector<std::unique_ptr<Stmt>> Statements;
-};
+	struct ContinueStmt : Stmt { };
 
-struct SwitchStmt : Stmt
-{
-    std::unique_ptr<Expr> Condition;
-    std::vector<CaseClause> Cases;
-};
+	struct CaseClause
+	{
+		std::unique_ptr<Expr>              Value; // null = default
+		std::vector<std::unique_ptr<Stmt>> Statements;
+	};
 
-// ---- top-level ----
+	struct SwitchStmt : Stmt
+	{
+		std::unique_ptr<Expr>   Condition;
+		std::vector<CaseClause> Cases;
+	};
 
-struct FunctionDecl
-{
-    std::string ReturnType; // empty means void
-    std::string Name;
-    std::vector<std::pair<std::string, std::string>> Params; // type, name
-    std::unique_ptr<BlockStmt> Body;                         // null for a prototype
-    bool Exported = false;
-    bool HasBody = true;
-};
+	// ---- top-level ----
+	struct FunctionDecl
+	{
+		std::string                                      ReturnType;       // empty means void
+		std::string                                      Name;
+		std::vector<std::pair<std::string, std::string>> Params;           // type, name
+		std::unique_ptr<BlockStmt>                       Body;             // null for a prototype
+		bool                                             Exported = false;
+		bool                                             HasBody = true;
+	};
 
-struct GlobalVarDecl
-{
-    std::string Type;
-    std::string Name;
-    std::unique_ptr<Expr> Init; // may be null
-    bool Constant = false;
-};
+	struct GlobalVarDecl
+	{
+		std::string           Type;
+		std::string           Name;
+		std::unique_ptr<Expr> Init;             // may be null
+		bool                  Constant = false;
+	};
 
-/// Kind of a declaration-only type (from `.hint` files or forward declarations).
-enum class DeclKind
-{
-    Struct,
-    Class,
-    Enum,
-};
+	/// Kind of a declaration-only type (from `.hint` files or forward declarations).
+	enum class DeclKind
+	{
+		Struct,
+		Class,
+		Enum,
+	};
 
-struct FieldDecl
-{
-    std::string Type;
-    std::string Name;
-};
+	struct FieldDecl
+	{
+		std::string Type;
+		std::string Name;
+	};
 
-struct TypeDecl
-{
-    DeclKind Kind = DeclKind::Struct;
-    std::string Name;
-    std::string Signature;
-    std::vector<FieldDecl> Fields;        ///< Struct/Class: field declarations.
-    std::vector<FunctionDecl> Methods;    ///< Struct/Class: methods.
-    std::vector<std::string> Enumerators; ///< Enum: enumerator names.
-};
+	struct TypeDecl
+	{
+		DeclKind                  Kind = DeclKind::Struct;
+		std::string               Name;
+		std::string               Signature;
+		std::vector<FieldDecl>    Fields;                  ///< Struct/Class: field declarations.
+		std::vector<FunctionDecl> Methods;                 ///< Struct/Class: methods.
+		std::vector<std::string>  Enumerators;             ///< Enum: enumerator names.
+	};
 
-/// A template declaration: type parameters plus a function or type template.
-struct TemplateDecl
-{
-    std::vector<std::string> Params;   ///< Type parameter names.
-    bool IsFunction = false;           ///< True for a function template, false for a type template.
-    FunctionDecl Function;             ///< Function template.
-    TypeDecl Type;                     ///< Type template.
-};
+	/// A template declaration: type parameters plus a function or type template.
+	struct TemplateDecl
+	{
+		std::vector<std::string> Params;             ///< Type parameter names.
+		bool                     IsFunction = false; ///< True for a function template, false for a type template.
+		FunctionDecl             Function;           ///< Function template.
+		TypeDecl                 Type;               ///< Type template.
+	};
 
-struct Program
-{
-    std::vector<FunctionDecl> Functions;
-    std::vector<TypeDecl> TypeDecls;
-    std::vector<TemplateDecl> Templates;
-    std::vector<GlobalVarDecl> Globals;
-};
-
-} // namespace xenon
+	struct Program
+	{
+		std::vector<FunctionDecl>  Functions;
+		std::vector<TypeDecl>      TypeDecls;
+		std::vector<TemplateDecl>  Templates;
+		std::vector<GlobalVarDecl> Globals;
+	};
+}
 
 #endif // !XENON__AST_HPP

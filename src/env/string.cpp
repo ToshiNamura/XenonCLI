@@ -1,36 +1,27 @@
-#include "xenon/env/string.hpp"
+#include <xenon/env/string.hpp>
 
 #include <cstddef>
 #include <functional>
 #include <string>
 #include <utility>
 
-namespace xenon
-{
+xenon::String::String() = default;
 
-String::String() = default;
+xenon::String::String(std::string value) : _value(std::move(value)) { }
 
-String::String(std::string value) : _value(std::move(value))
+xenon::String::String(const char* value) : _value(value != nullptr ? value : "") { }
+
+std::string xenon::String::getType() const
 {
+	return "String";
 }
 
-String::String(const char* value) : _value(value != nullptr ? value : "")
+std::size_t xenon::String::getHash() const
 {
+	return std::hash<std::string>{}(_value);
 }
 
-std::string String::getType() const
+std::string xenon::String::toString() const
 {
-    return "String";
+	return _value;
 }
-
-std::size_t String::getHash() const
-{
-    return std::hash<std::string>{}(_value);
-}
-
-std::string String::toString() const
-{
-    return _value;
-}
-
-} // namespace xenon

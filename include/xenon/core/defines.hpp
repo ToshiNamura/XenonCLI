@@ -16,9 +16,9 @@
 #define XENON_VERSION_STRING "0.1.0"
 
 /// Standard file extensions used by the Xenon toolchain.
-#define XENON_SOURCE_EXTENSION ".ixx"
-#define XENON_HINT_EXTENSION ".hint"
-#define XENON_MODULE_EXTENSION ".module"
+#define XENON_SOURCE_EXTENSION  ".ixx"
+#define XENON_HINT_EXTENSION    ".hint"
+#define XENON_MODULE_EXTENSION  ".module"
 #define XENON_PACKAGE_EXTENSION ".xenon"
 
 #endif // !XENON__DEFINES_HPP

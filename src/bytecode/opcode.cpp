@@ -1,54 +1,33 @@
-#include "xenon/bytecode/opcode.hpp"
+#include <xenon/bytecode/opcode.hpp>
 
-namespace xenon
-{
+#define XENON_OPCODE_NAME_CASE(opcode) case xenon::OpCode::opcode: return #opcode
 
-const char* opcodeName(OpCode op)
+const char* xenon::opcodeName(xenon::OpCode op)
 {
-    switch (op)
-    {
-    case OpCode::Constant:
-        return "Constant";
-    case OpCode::LoadLocal:
-        return "LoadLocal";
-    case OpCode::StoreLocal:
-        return "StoreLocal";
-    case OpCode::Pop:
-        return "Pop";
-    case OpCode::Add:
-        return "Add";
-    case OpCode::Subtract:
-        return "Subtract";
-    case OpCode::Multiply:
-        return "Multiply";
-    case OpCode::Divide:
-        return "Divide";
-    case OpCode::Negate:
-        return "Negate";
-    case OpCode::Not:
-        return "Not";
-    case OpCode::Equal:
-        return "Equal";
-    case OpCode::NotEqual:
-        return "NotEqual";
-    case OpCode::Less:
-        return "Less";
-    case OpCode::LessEqual:
-        return "LessEqual";
-    case OpCode::Greater:
-        return "Greater";
-    case OpCode::GreaterEqual:
-        return "GreaterEqual";
-    case OpCode::Jump:
-        return "Jump";
-    case OpCode::JumpIfFalse:
-        return "JumpIfFalse";
-    case OpCode::Call:
-        return "Call";
-    case OpCode::Return:
-        return "Return";
-    }
-    return "Unknown";
+	switch (op)
+	{
+		XENON_OPCODE_NAME_CASE(Constant);
+		XENON_OPCODE_NAME_CASE(LoadLocal);
+		XENON_OPCODE_NAME_CASE(StoreLocal);
+		XENON_OPCODE_NAME_CASE(Pop);
+		XENON_OPCODE_NAME_CASE(Add);
+		XENON_OPCODE_NAME_CASE(Subtract);
+		XENON_OPCODE_NAME_CASE(Multiply);
+		XENON_OPCODE_NAME_CASE(Divide);
+		XENON_OPCODE_NAME_CASE(Negate);
+		XENON_OPCODE_NAME_CASE(Not);
+		XENON_OPCODE_NAME_CASE(Equal);
+		XENON_OPCODE_NAME_CASE(NotEqual);
+		XENON_OPCODE_NAME_CASE(Less);
+		XENON_OPCODE_NAME_CASE(LessEqual);
+		XENON_OPCODE_NAME_CASE(Greater);
+		XENON_OPCODE_NAME_CASE(GreaterEqual);
+		XENON_OPCODE_NAME_CASE(Jump);
+		XENON_OPCODE_NAME_CASE(JumpIfFalse);
+		XENON_OPCODE_NAME_CASE(Call);
+		XENON_OPCODE_NAME_CASE(Return);
+	}
+	return "Unknown";
 }
 
-} // namespace xenon
+#undef XENON_OPCODE_NAME_CASE

@@ -1,25 +1,20 @@
-#include "xenon/env/object.hpp"
+#include <xenon/env/object.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
 
-namespace xenon
+std::string xenon::Object::getType() const
 {
-
-std::string Object::getType() const
-{
-    return "Object";
+	return "Object";
 }
 
-std::size_t Object::getHash() const
+std::size_t xenon::Object::getHash() const
 {
-    return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(this));
+	return static_cast<std::size_t>(reinterpret_cast<std::uintptr_t>(this));
 }
 
-std::string Object::toString() const
+std::string xenon::Object::toString() const
 {
-    return "Object";
+	return "Object";
 }
-
-} // namespace xenon

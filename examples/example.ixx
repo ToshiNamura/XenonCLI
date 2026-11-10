@@ -10,23 +10,23 @@ import IO.Core;
 
 double add(double a, double b)
 {
-    return a + b;
+	return a + b;
 }
 
 double factorial(double n)
 {
-    double result = 1.0;
-    double i = 1.0;
-    while (i <= n)
-    {
-        result = result * i;
-        i = i + 1.0;
-    }
-    return result;
+	double result = 1.0;
+	double i = 1.0;
+	while (i <= n)
+	{
+		result = result * i;
+		i = i + 1.0;
+	}
+	return result;
 }
 
 double main()
 {
-    double x = add(20.0, 22.0);
-    return x + factorial(5.0);
+	double x = add(20.0, 22.0);
+	return x + factorial(5.0);
 }

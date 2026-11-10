@@ -1,35 +1,30 @@
-#include "xenon/runtime/virtual_stack.hpp"
+#include <xenon/runtime/virtual_stack.hpp>
 
 #include <utility>
 
-#include "xenon/runtime/error.hpp"
+#include <xenon/runtime/error.hpp>
 
-namespace xenon
+void xenon::VirtualStack::push(xenon::Value value)
 {
-
-void VirtualStack::push(Value value)
-{
-    _values.push_back(std::move(value));
+	_values.push_back(std::move(value));
 }
 
-Value VirtualStack::pop()
+xenon::Value xenon::VirtualStack::pop()
 {
-    if (_values.empty())
-    {
-        throw RuntimeError("stack underflow");
-    }
-    auto value = std::move(_values.back());
-    _values.pop_back();
-    return value;
+	if (_values.empty())
+	{
+		throw xenon::RuntimeError("stack underflow");
+	}
+	auto value = std::move(_values.back());
+	_values.pop_back();
+	return value;
 }
 
-const Value& VirtualStack::peek(std::size_t depth) const
+const xenon::Value& xenon::VirtualStack::peek(std::size_t depth) const
 {
-    if (depth >= _values.size())
-    {
-        throw RuntimeError("stack peek out of range");
-    }
-    return _values[_values.size() - 1 - depth];
+	if (depth >= _values.size())
+	{
+		throw xenon::RuntimeError("stack peek out of range");
+	}
+	return _values[_values.size() - 1 - depth];
 }
-
-} // namespace xenon

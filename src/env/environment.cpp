@@ -1,41 +1,36 @@
-#include "xenon/env/environment.hpp"
+#include <xenon/env/environment.hpp>
 
 #include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
-namespace xenon
+void xenon::Environment::registerClass(std::string typeName, Factory factory)
 {
-
-void Environment::registerClass(std::string typeName, Factory factory)
-{
-    _classes[std::move(typeName)] = std::move(factory);
+	_classes[std::move(typeName)] = std::move(factory);
 }
 
-bool Environment::hasClass(std::string_view typeName) const
+bool xenon::Environment::hasClass(std::string_view typeName) const
 {
-    return _classes.find(std::string(typeName)) != _classes.end();
+	return _classes.find(std::string(typeName)) != _classes.end();
 }
 
-std::shared_ptr<Object> Environment::create(std::string_view typeName) const
+std::shared_ptr<xenon::Object> xenon::Environment::create(std::string_view typeName) const
 {
-    const auto it = _classes.find(std::string(typeName));
-    if (it == _classes.end())
-    {
-        throw std::runtime_error("unknown Xenon class: " + std::string(typeName));
-    }
-    return it->second();
+	const auto it = _classes.find(std::string(typeName));
+	if (it == _classes.end())
+	{
+		throw std::runtime_error("unknown Xenon class: " + std::string(typeName));
+	}
+	return it->second();
 }
 
-std::string Environment::getType() const
+std::string xenon::Environment::getType() const
 {
-    return "Environment";
+	return "Environment";
 }
 
-std::string Environment::toString() const
+std::string xenon::Environment::toString() const
 {
-    return "Environment(" + std::to_string(_classes.size()) + " classes)";
+	return "Environment(" + std::to_string(_classes.size()) + " classes)";
 }
-
-} // namespace xenon

@@ -13,21 +13,25 @@
 Через пресеты:
 
 ```sh
-cmake --preset default
-cmake --build --preset default
+cmake --preset x64-debug
+cmake --build out/build/x64-debug
 ```
+
+Доступные пресеты: `x64-debug`, `x64-release`, `x86-debug`, `x86-release`
+(Windows), `linux-debug`, `linux-release`, `macos-debug`, `macos-release`.
+Каталог сборки — `out/build/<пресет>`.
 
 Либо вручную:
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
+cmake -S . -B out/build/x64-debug -DCMAKE_BUILD_TYPE=Debug
+cmake --build out/build/x64-debug
 ```
 
 ## Тесты
 
 ```sh
-ctest --test-dir build --output-on-failure
+ctest --test-dir out/build/x64-debug --output-on-failure
 ```
 
 Наборы тестов:
