@@ -100,6 +100,14 @@ namespace xenon
 
 		void compileExpression(const Expr& expr);
 
+		void compileCompoundAssignment(const std::string& name, const Expr& value, CompoundOp operation);
+
+		void compileFieldCompoundAssignment(const FieldAssignExpr& expr);
+
+		void compileIncrement(const Expr& target, bool increment, bool postfix);
+
+		void emitBinaryOperation(CompoundOp operation);
+
 		void enterScope();
 
 		void leaveScope();

@@ -46,10 +46,19 @@ namespace xenon
 		{
 			Negate,
 			Not,
+			BitNot,
+			PreIncrement,
+			PreDecrement,
 		};
 
 		Op                    Operation = Op::Negate;
-		std::unique_ptr<Expr> Operand;
+		std::unique_ptr<Expr> Operand; ///< For `++x`/`--x`: a variable or field access.
+	};
+
+	struct PostfixExpr : Expr
+	{
+		bool                  Increment = true; ///< False for `x--`.
+		std::unique_ptr<Expr> Operand;          ///< A variable or field access.
 	};
 
 	struct BinaryExpr : Expr
@@ -60,6 +69,7 @@ namespace xenon
 			Subtract,
 			Multiply,
 			Divide,
+			Modulo,
 			Equal,
 			NotEqual,
 			Less,
@@ -68,6 +78,11 @@ namespace xenon
 			GreaterEqual,
 			And,
 			Or,
+			BitAnd,
+			BitOr,
+			BitXor,
+			ShiftLeft,
+			ShiftRight,
 		};
 
 		Op                    Operation = Op::Add;
@@ -75,10 +90,22 @@ namespace xenon
 		std::unique_ptr<Expr> Right;
 	};
 
+	struct TernaryExpr : Expr
+	{
+		std::unique_ptr<Expr> Condition;
+		std::unique_ptr<Expr> Then;
+		std::unique_ptr<Expr> Else;
+	};
+
+	/// The operator of a compound assignment (`x += 1`).
+	using CompoundOp = BinaryExpr::Op;
+
 	struct AssignExpr : Expr
 	{
 		std::string           Name;
 		std::unique_ptr<Expr> Value;
+		bool                  Compound = false;    ///< True for `x op= value`.
+		CompoundOp            Operation = CompoundOp::Add;
 	};
 
 	struct CallExpr : Expr
@@ -103,6 +130,8 @@ namespace xenon
 		std::unique_ptr<Expr> Object;
 		std::unique_ptr<Expr> Value;
 		std::string           FieldName;
+		bool                  Compound  = false; ///< True for `obj.field op= value`.
+		CompoundOp            Operation = CompoundOp::Add;
 	};
 
 	// ---- statements ----

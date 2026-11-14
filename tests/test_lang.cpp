@@ -411,6 +411,243 @@ double main()
 	check(number != nullptr && std::abs(*number - 5.0) < 1e-12, "cross-module call result wrong");
 }
 
+void testArithmeticOperators()
+{
+	const std::string source = R"(
+export module Arithmetic;
+
+double compound()
+{
+	double x = 10.0;
+	x += 5.0;
+	x -= 3.0;
+	x *= 2.0;
+	x /= 4.0;
+	x %= 4.0;
+	return x;
+}
+
+double modulo(double a, double b)
+{
+	return a % b;
+}
+
+double main()
+{
+	return compound() + modulo(7.0, 4.0);
+}
+)";
+
+	const auto module = compileOrFail(source, "arithmetic operators");
+
+	xenon::Runtime runtime;
+	runtime.addModule(module);
+	check(runtime.run("main") == xenon::InterpretResult::Ok, "run('main') failed");
+
+	const auto* number = std::get_if<double>(&runtime.lastValue());
+	check(number != nullptr && std::abs(*number - 5.0) < 1e-12, "compound assignment/result wrong");
+}
+
+void testBitwiseOperators()
+{
+	const std::string source = R"(
+export module Bitwise;
+
+double binary()
+{
+	return (5.0 & 3.0) + (5.0 | 2.0) + (5.0 ^ 1.0) + ~5.0;
+}
+
+double shifts()
+{
+	return (1.0 << 4.0) + (256.0 >> 4.0);
+}
+
+double compound()
+{
+	double x = 6.0;
+	x &= 3.0;
+	x |= 8.0;
+	x ^= 3.0;
+	x <<= 2.0;
+	x >>= 3.0;
+	return x;
+}
+
+double main()
+{
+	return binary() + shifts() + compound();
+}
+)";
+
+	const auto module = compileOrFail(source, "bitwise operators");
+
+	xenon::Runtime runtime;
+	runtime.addModule(module);
+	check(runtime.run("main") == xenon::InterpretResult::Ok, "run('main') failed");
+
+	const auto* number = std::get_if<double>(&runtime.lastValue());
+	check(number != nullptr && std::abs(*number - 42.0) < 1e-12, "bitwise operator result wrong");
+}
+
+void testIncrementDecrement()
+{
+	const std::string source = R"(
+export module Increment;
+
+int counter = 0;
+
+struct Box
+{
+	double value;
+};
+
+double locals()
+{
+	double i = 0.0;
+	double a = i++;
+	double b = ++i;
+	double c = i--;
+	double d = --i;
+	return a + b + c + d + i;
+}
+
+double globals()
+{
+	counter++;
+	double a = counter;
+	++counter;
+	double b = counter;
+	counter--;
+	double c = counter;
+	--counter;
+	double d = counter;
+	return a + b + c + d + counter;
+}
+
+double field()
+{
+	Box box = new Box();
+	box.value = 5.0;
+	double a = box.value++;
+	double b = ++box.value;
+	box.value += 3.0;
+	return a + b + box.value;
+}
+
+double main()
+{
+	return locals() + globals() + field();
+}
+)";
+
+	const auto module = compileOrFail(source, "increment/decrement");
+
+	xenon::Runtime runtime;
+	runtime.addModule(module);
+	check(runtime.run("main") == xenon::InterpretResult::Ok, "run('main') failed");
+
+	const auto* number = std::get_if<double>(&runtime.lastValue());
+	check(number != nullptr && std::abs(*number - 30.0) < 1e-12, "increment/decrement result wrong");
+}
+
+void testTernary()
+{
+	const std::string source = R"(
+export module Ternary;
+
+double sign(double x)
+{
+	return x > 0.0 ? 1.0 : (x < 0.0 ? -1.0 : 0.0);
+}
+
+double main()
+{
+	return sign(5.0) + sign(-5.0) + sign(0.0);
+}
+)";
+
+	const auto module = compileOrFail(source, "ternary operator");
+
+	xenon::Runtime runtime;
+	runtime.addModule(module);
+	check(runtime.run("main") == xenon::InterpretResult::Ok, "run('main') failed");
+
+	const auto* number = std::get_if<double>(&runtime.lastValue());
+	check(number != nullptr && std::abs(*number) < 1e-12, "ternary result wrong");
+}
+
+void testConstantExpressions()
+{
+	const std::string source = R"(
+export module ConstExpr;
+
+int mask = 1 << 4;
+const double half = 10.0 / 4.0;
+
+double main()
+{
+	return mask + half;
+}
+)";
+
+	const auto module = compileOrFail(source, "constant expressions");
+
+	xenon::Runtime runtime;
+	runtime.addModule(module);
+	check(runtime.run("main") == xenon::InterpretResult::Ok, "run('main') failed");
+
+	const auto* number = std::get_if<double>(&runtime.lastValue());
+	check(number != nullptr && std::abs(*number - 18.5) < 1e-12, "constant expression result wrong");
+}
+
+void testNestedTemplateArguments()
+{
+	const std::string source = R"(
+export module Nested;
+
+template <typename T>
+struct Box
+{
+	T value;
+};
+
+template <typename T>
+struct Pair
+{
+	T first;
+	T second;
+};
+
+double main()
+{
+	Pair<Box<double>> pair = new Pair<Box<double>>();
+	return 1.0;
+}
+)";
+
+	xenon::Module   module;
+	xenon::Compiler compiler;
+	check(compiler.compile(source, module),
+		  "nested template arguments failed: " + compiler.lastError());
+}
+
+void testIncrementRequiresTarget()
+{
+	const std::string source = R"(
+export module BadIncrement;
+
+double main()
+{
+	return (1.0 + 2.0)++;
+}
+)";
+
+	xenon::Module   module;
+	xenon::Compiler compiler;
+	check(!compiler.compile(source, module), "incrementing an rvalue should fail to compile");
+}
+
 void testParseError()
 {
 	const std::string source = R"(
@@ -440,6 +677,13 @@ int main()
 		testTemplates();
 		testGlobals();
 		testCrossModuleCall();
+		testArithmeticOperators();
+		testBitwiseOperators();
+		testIncrementDecrement();
+		testTernary();
+		testConstantExpressions();
+		testNestedTemplateArguments();
+		testIncrementRequiresTarget();
 		testParseError();
 	}
 	catch (const std::exception& error)

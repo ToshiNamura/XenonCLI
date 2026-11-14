@@ -43,6 +43,13 @@ namespace xenon
 		Ret   = 25, ///< ret  — вернуть вершину как результат.
 		Jmpa  = 26, ///< jmpa — адресный безусловный переход (u32).
 		Jifa  = 27, ///< jifa — адресный условный переход (u32).
+		Mod   = 28, ///< mod  — остаток от деления (`std::fmod`).
+		BAnd  = 29, ///< and  — побитовое И над целыми значениями.
+		BOr   = 30, ///< or   — побитовое ИЛИ.
+		BXor  = 31, ///< xor  — побитовое исключающее ИЛИ.
+		BNot  = 32, ///< bnot — побитовое НЕ.
+		Shl   = 33, ///< shl  — сдвиг влево.
+		Shr   = 34, ///< shr  — сдвиг вправо.
 	};
 
 	/// How the assembler and disassembler interpret an instruction operand.

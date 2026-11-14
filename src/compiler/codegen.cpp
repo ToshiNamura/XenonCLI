@@ -1,6 +1,7 @@
 #include <xenon/compiler/codegen.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -422,10 +423,57 @@ namespace xenon
 		{
 			if (unary->Operation == xenon::UnaryExpr::Op::Negate)
 			{
-				if (const auto* number = dynamic_cast<const xenon::NumberExpr*>(unary->Operand.get()))
+				const xenon::Value operand = evaluateConstant(unary->Operand.get());
+				if (const auto* number = std::get_if<double>(&operand))
 				{
-					return xenon::Value{-number->Value};
+					return xenon::Value{-*number};
 				}
+			}
+		}
+
+		if (const auto* binary = dynamic_cast<const xenon::BinaryExpr*>(init))
+		{
+			const xenon::Value left  = evaluateConstant(binary->Left.get());
+			const xenon::Value right = evaluateConstant(binary->Right.get());
+			const auto*        a     = std::get_if<double>(&left);
+			const auto*        b     = std::get_if<double>(&right);
+			if (a == nullptr || b == nullptr)
+			{
+				fail("global initializer must be a constant expression");
+			}
+
+			switch (binary->Operation)
+			{
+				case xenon::BinaryExpr::Op::Add:      return xenon::Value{*a + *b};
+				case xenon::BinaryExpr::Op::Subtract: return xenon::Value{*a - *b};
+				case xenon::BinaryExpr::Op::Multiply: return xenon::Value{*a * *b};
+				case xenon::BinaryExpr::Op::Divide:
+					if (*b == 0.0)
+					{
+						fail("division by zero in a constant expression");
+					}
+					return xenon::Value{*a / *b};
+				case xenon::BinaryExpr::Op::Modulo:
+					if (*b == 0.0)
+					{
+						fail("division by zero in a constant expression");
+					}
+					return xenon::Value{std::fmod(*a, *b)};
+				case xenon::BinaryExpr::Op::BitAnd:
+					return xenon::Value{static_cast<double>(static_cast<std::int64_t>(*a) & static_cast<std::int64_t>(*b))};
+				case xenon::BinaryExpr::Op::BitOr:
+					return xenon::Value{static_cast<double>(static_cast<std::int64_t>(*a) | static_cast<std::int64_t>(*b))};
+				case xenon::BinaryExpr::Op::BitXor:
+					return xenon::Value{static_cast<double>(static_cast<std::int64_t>(*a) ^ static_cast<std::int64_t>(*b))};
+				case xenon::BinaryExpr::Op::ShiftLeft:
+					return xenon::Value{static_cast<double>(static_cast<std::int64_t>(
+						static_cast<std::uint64_t>(static_cast<std::int64_t>(*a))
+						<< static_cast<std::uint64_t>(static_cast<std::int64_t>(*b) & 63)))};
+				case xenon::BinaryExpr::Op::ShiftRight:
+					return xenon::Value{static_cast<double>(static_cast<std::int64_t>(*a) >>
+														   (static_cast<std::int64_t>(*b) & 63))};
+				default:
+					fail("global initializer must be a constant expression");
 			}
 		}
 
@@ -956,6 +1004,11 @@ namespace xenon
 		}
 		if (const auto* fa = dynamic_cast<const xenon::FieldAssignExpr*>(&expr))
 		{
+			if (fa->Compound)
+			{
+				compileFieldCompoundAssignment(*fa);
+				return;
+			}
 			compileExpression(*fa->Object);
 			compileExpression(*fa->Value);
 			const auto index = resolveField(*fa->Object, fa->FieldName);
@@ -980,12 +1033,52 @@ namespace xenon
 		}
 		if (const auto* u = dynamic_cast<const xenon::UnaryExpr*>(&expr))
 		{
-			compileExpression(*u->Operand);
-			emitOpcode(u->Operation == xenon::UnaryExpr::Op::Negate ? Instruction::Neg : Instruction::Not);
+			switch (u->Operation)
+			{
+				case xenon::UnaryExpr::Op::Negate:
+					compileExpression(*u->Operand);
+					emitOpcode(Instruction::Neg);
+					return;
+				case xenon::UnaryExpr::Op::Not:
+					compileExpression(*u->Operand);
+					emitOpcode(Instruction::Not);
+					return;
+				case xenon::UnaryExpr::Op::BitNot:
+					compileExpression(*u->Operand);
+					emitOpcode(Instruction::BNot);
+					return;
+				case xenon::UnaryExpr::Op::PreIncrement:
+					compileIncrement(*u->Operand, true, false);
+					return;
+				case xenon::UnaryExpr::Op::PreDecrement:
+					compileIncrement(*u->Operand, false, false);
+					return;
+			}
+			fail("unknown unary operator");
+		}
+		if (const auto* p = dynamic_cast<const xenon::PostfixExpr*>(&expr))
+		{
+			compileIncrement(*p->Operand, p->Increment, true);
+			return;
+		}
+		if (const auto* ternary = dynamic_cast<const xenon::TernaryExpr*>(&expr))
+		{
+			compileExpression(*ternary->Condition);
+			const auto elseJump = emitJump(Instruction::Jif);
+			compileExpression(*ternary->Then);
+			const auto endJump = emitJump(Instruction::Jmp);
+			patchJump(elseJump, _binary->codePosition());
+			compileExpression(*ternary->Else);
+			patchJump(endJump, _binary->codePosition());
 			return;
 		}
 		if (const auto* a = dynamic_cast<const xenon::AssignExpr*>(&expr))
 		{
+			if (a->Compound)
+			{
+				compileCompoundAssignment(a->Name, *a->Value, a->Operation);
+				return;
+			}
 			compileExpression(*a->Value);
 			if (hasLocal(a->Name))
 			{
@@ -1041,25 +1134,180 @@ namespace xenon
 
 			compileExpression(*bin->Left);
 			compileExpression(*bin->Right);
-			switch (bin->Operation)
-			{
-				case xenon::BinaryExpr::Op::Add:          emitOpcode(Instruction::Add); break;
-				case xenon::BinaryExpr::Op::Subtract:     emitOpcode(Instruction::Sub); break;
-				case xenon::BinaryExpr::Op::Multiply:     emitOpcode(Instruction::Mul); break;
-				case xenon::BinaryExpr::Op::Divide:       emitOpcode(Instruction::Div); break;
-				case xenon::BinaryExpr::Op::Equal:        emitOpcode(Instruction::Equ); break;
-				case xenon::BinaryExpr::Op::NotEqual:     emitOpcode(Instruction::Neq); break;
-				case xenon::BinaryExpr::Op::Less:         emitOpcode(Instruction::Lss); break;
-				case xenon::BinaryExpr::Op::LessEqual:    emitOpcode(Instruction::Leq); break;
-				case xenon::BinaryExpr::Op::Greater:      emitOpcode(Instruction::Gtr); break;
-				case xenon::BinaryExpr::Op::GreaterEqual: emitOpcode(Instruction::Geq); break;
-				case xenon::BinaryExpr::Op::And:
-				case xenon::BinaryExpr::Op::Or:
-					break;
-			}
+			emitBinaryOperation(bin->Operation);
 			return;
 		}
 		fail("unknown expression");
+	}
+
+	void xenon::CodeGenerator::emitBinaryOperation(xenon::CompoundOp operation)
+	{
+		switch (operation)
+		{
+			case xenon::CompoundOp::Add:          emitOpcode(Instruction::Add); break;
+			case xenon::CompoundOp::Subtract:     emitOpcode(Instruction::Sub); break;
+			case xenon::CompoundOp::Multiply:     emitOpcode(Instruction::Mul); break;
+			case xenon::CompoundOp::Divide:       emitOpcode(Instruction::Div); break;
+			case xenon::CompoundOp::Modulo:       emitOpcode(Instruction::Mod); break;
+			case xenon::CompoundOp::Equal:        emitOpcode(Instruction::Equ); break;
+			case xenon::CompoundOp::NotEqual:     emitOpcode(Instruction::Neq); break;
+			case xenon::CompoundOp::Less:         emitOpcode(Instruction::Lss); break;
+			case xenon::CompoundOp::LessEqual:    emitOpcode(Instruction::Leq); break;
+			case xenon::CompoundOp::Greater:      emitOpcode(Instruction::Gtr); break;
+			case xenon::CompoundOp::GreaterEqual: emitOpcode(Instruction::Geq); break;
+			case xenon::CompoundOp::BitAnd:       emitOpcode(Instruction::BAnd); break;
+			case xenon::CompoundOp::BitOr:        emitOpcode(Instruction::BOr); break;
+			case xenon::CompoundOp::BitXor:       emitOpcode(Instruction::BXor); break;
+			case xenon::CompoundOp::ShiftLeft:    emitOpcode(Instruction::Shl); break;
+			case xenon::CompoundOp::ShiftRight:   emitOpcode(Instruction::Shr); break;
+			case xenon::CompoundOp::And:
+			case xenon::CompoundOp::Or:
+				fail("logical operators are not supported in compound assignments");
+		}
+	}
+
+	void xenon::CodeGenerator::compileCompoundAssignment(const std::string& name, const xenon::Expr& value,
+														 xenon::CompoundOp operation)
+	{
+		if (hasLocal(name))
+		{
+			const auto slot = resolveLocal(name);
+			emitOpcode(Instruction::Ldl);
+			emitU16(slot);
+			compileExpression(value);
+			emitBinaryOperation(operation);
+			emitOpcode(Instruction::Stl);
+			emitU16(slot);
+			emitOpcode(Instruction::Ldl);
+			emitU16(slot);
+			return;
+		}
+
+		resolveGlobal(name);
+		emitOpcode(Instruction::Ldg);
+		emitName(name);
+		compileExpression(value);
+		emitBinaryOperation(operation);
+		emitOpcode(Instruction::Stg);
+		emitName(name);
+	}
+
+	void xenon::CodeGenerator::compileFieldCompoundAssignment(const xenon::FieldAssignExpr& expr)
+	{
+		const auto fieldIndex = resolveField(*expr.Object, expr.FieldName);
+		const auto objectSlot = allocateTemp();
+		const auto valueSlot  = allocateTemp();
+
+		compileExpression(*expr.Object);
+		emitOpcode(Instruction::Stl);
+		emitU16(objectSlot);
+
+		emitOpcode(Instruction::Ldl);
+		emitU16(objectSlot);
+		emitOpcode(Instruction::Getf);
+		emitU16(fieldIndex);
+		compileExpression(*expr.Value);
+		emitBinaryOperation(expr.Operation);
+		emitOpcode(Instruction::Stl);
+		emitU16(valueSlot);
+
+		emitOpcode(Instruction::Ldl);
+		emitU16(objectSlot);
+		emitOpcode(Instruction::Ldl);
+		emitU16(valueSlot);
+		emitOpcode(Instruction::Setf);
+		emitU16(fieldIndex);
+	}
+
+	void xenon::CodeGenerator::compileIncrement(const xenon::Expr& target, bool increment, bool postfix)
+	{
+		const auto emitStep = [this, increment]()
+		{
+			emitConstant(1.0);
+			emitOpcode(increment ? Instruction::Add : Instruction::Sub);
+		};
+
+		if (const auto* variable = dynamic_cast<const xenon::VariableExpr*>(&target))
+		{
+			if (hasLocal(variable->Name))
+			{
+				const auto slot = resolveLocal(variable->Name);
+				if (postfix)
+				{
+					emitOpcode(Instruction::Ldl);
+					emitU16(slot);
+				}
+				emitOpcode(Instruction::Ldl);
+				emitU16(slot);
+				emitStep();
+				emitOpcode(Instruction::Stl);
+				emitU16(slot);
+				if (!postfix)
+				{
+					emitOpcode(Instruction::Ldl);
+					emitU16(slot);
+				}
+				return;
+			}
+
+			resolveGlobal(variable->Name);
+			if (postfix)
+			{
+				emitOpcode(Instruction::Ldg);
+				emitName(variable->Name);
+			}
+			emitOpcode(Instruction::Ldg);
+			emitName(variable->Name);
+			emitStep();
+			emitOpcode(Instruction::Stg);
+			emitName(variable->Name);
+			if (postfix)
+			{
+				emitOpcode(Instruction::Pop);
+			}
+			return;
+		}
+
+		if (const auto* field = dynamic_cast<const xenon::FieldAccessExpr*>(&target))
+		{
+			const auto fieldIndex = resolveField(*field->Object, field->FieldName);
+			const auto objectSlot = allocateTemp();
+			const auto valueSlot  = allocateTemp();
+
+			compileExpression(*field->Object);
+			emitOpcode(Instruction::Stl);
+			emitU16(objectSlot);
+
+			if (postfix)
+			{
+				emitOpcode(Instruction::Ldl);
+				emitU16(objectSlot);
+				emitOpcode(Instruction::Getf);
+				emitU16(fieldIndex);
+			}
+
+			emitOpcode(Instruction::Ldl);
+			emitU16(objectSlot);
+			emitOpcode(Instruction::Getf);
+			emitU16(fieldIndex);
+			emitStep();
+			emitOpcode(Instruction::Stl);
+			emitU16(valueSlot);
+
+			emitOpcode(Instruction::Ldl);
+			emitU16(objectSlot);
+			emitOpcode(Instruction::Ldl);
+			emitU16(valueSlot);
+			emitOpcode(Instruction::Setf);
+			emitU16(fieldIndex);
+			if (postfix)
+			{
+				emitOpcode(Instruction::Pop);
+			}
+			return;
+		}
+
+		fail("'++' and '--' require a variable or a field");
 	}
 
 	void xenon::CodeGenerator::emitOpcode(Instruction op)

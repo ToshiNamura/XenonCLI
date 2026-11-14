@@ -1,5 +1,6 @@
 #include <xenon/runtime/virtual_machine.hpp>
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -28,6 +29,26 @@ namespace xenon
 				return false;
 			}
 			return true; // Ref
+		}
+
+		/// Bitwise operations work on the integer part of a number.
+		std::int64_t toInteger(double value)
+		{
+			if (value != value || value > 9.2e18 || value < -9.2e18)
+			{
+				throw xenon::RuntimeError("number is out of the integer range for a bitwise operation");
+			}
+			return static_cast<std::int64_t>(value);
+		}
+
+		std::int64_t shiftAmount(double value)
+		{
+			const auto amount = toInteger(value);
+			if (amount < 0 || amount > 63)
+			{
+				throw xenon::RuntimeError("shift amount must be between 0 and 63");
+			}
+			return amount;
 		}
 
 		bool valuesEqual(const xenon::Value& a, const xenon::Value& b)
@@ -540,6 +561,63 @@ namespace xenon
 					throw xenon::RuntimeError("division by zero");
 				}
 				push(a / b);
+				break;
+			}
+
+			case xenon::Instruction::Mod:
+			{
+				const auto b = expectNumber(pop());
+				const auto a = expectNumber(pop());
+				if (b == 0.0)
+				{
+					throw xenon::RuntimeError("division by zero");
+				}
+				push(std::fmod(a, b));
+				break;
+			}
+
+			case xenon::Instruction::BAnd:
+			{
+				const auto b = toInteger(expectNumber(pop()));
+				const auto a = toInteger(expectNumber(pop()));
+				push(static_cast<double>(a & b));
+				break;
+			}
+
+			case xenon::Instruction::BOr:
+			{
+				const auto b = toInteger(expectNumber(pop()));
+				const auto a = toInteger(expectNumber(pop()));
+				push(static_cast<double>(a | b));
+				break;
+			}
+
+			case xenon::Instruction::BXor:
+			{
+				const auto b = toInteger(expectNumber(pop()));
+				const auto a = toInteger(expectNumber(pop()));
+				push(static_cast<double>(a ^ b));
+				break;
+			}
+
+			case xenon::Instruction::BNot:
+				push(static_cast<double>(~toInteger(expectNumber(pop()))));
+				break;
+
+			case xenon::Instruction::Shl:
+			{
+				const auto amount = shiftAmount(expectNumber(pop()));
+				const auto value  = toInteger(expectNumber(pop()));
+				push(static_cast<double>(static_cast<std::int64_t>(
+					static_cast<std::uint64_t>(value) << amount)));
+				break;
+			}
+
+			case xenon::Instruction::Shr:
+			{
+				const auto amount = shiftAmount(expectNumber(pop()));
+				const auto value  = toInteger(expectNumber(pop()));
+				push(static_cast<double>(value >> amount));
 				break;
 			}
 

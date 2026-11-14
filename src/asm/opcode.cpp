@@ -32,6 +32,13 @@ const char* xenon::mnemonic(Instruction op) noexcept
 		case Instruction::Ret:   return "ret";
 		case Instruction::Jmpa:  return "jmpa";
 		case Instruction::Jifa:  return "jifa";
+		case Instruction::Mod:   return "mod";
+		case Instruction::BAnd:  return "and";
+		case Instruction::BOr:   return "or";
+		case Instruction::BXor:  return "xor";
+		case Instruction::BNot:  return "bnot";
+		case Instruction::Shl:   return "shl";
+		case Instruction::Shr:   return "shr";
 	}
 	return "?";
 }
@@ -129,6 +136,10 @@ bool xenon::instructionFromMnemonic(std::string_view name, Instruction& out) noe
 		{"jmp", Instruction::Jmp},     {"jif", Instruction::Jif},
 		{"call", Instruction::Call},   {"ret", Instruction::Ret},
 		{"jmpa", Instruction::Jmpa},   {"jifa", Instruction::Jifa},
+		{"mod", Instruction::Mod},     {"and", Instruction::BAnd},
+		{"or", Instruction::BOr},      {"xor", Instruction::BXor},
+		{"bnot", Instruction::BNot},   {"shl", Instruction::Shl},
+		{"shr", Instruction::Shr},
 	};
 	for (const auto& entry : table)
 	{
