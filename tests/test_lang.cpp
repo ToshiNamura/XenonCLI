@@ -22,9 +22,10 @@ void check(bool condition, const std::string& message)
 
 xenon::Module compileOrFail(const std::string& source, const std::string& what)
 {
-	xenon::Module module;
+	xenon::Module   module;
 	xenon::Compiler compiler;
-	check(compiler.compile(source, module), what + " (compile failed): " + compiler.lastError());
+	const bool      compiled = compiler.compile(source, module);
+	check(compiled, what + " (compile failed): " + compiler.lastError());
 	return module;
 }
 
@@ -849,6 +850,89 @@ double main()
 	check(number != nullptr && std::abs(*number - 15.0) < 1e-12, "const usage result wrong");
 }
 
+void testEnumValues()
+{
+	const std::string source = R"(
+export module Enums;
+
+enum Color
+{
+	Red,
+	Green,
+	Blue,
+};
+
+Color current = Color::Green;
+
+double pick(Color color)
+{
+	switch (color)
+	{
+		case Color::Red:
+			return 10.0;
+		case Color::Green:
+			return 20.0;
+		default:
+			return 30.0;
+	}
+}
+
+double main()
+{
+	Color favorite = Color::Blue;
+	return pick(current) + pick(favorite) + Red;
+}
+)";
+
+	const auto module = compileOrFail(source, "enum values");
+
+	xenon::Runtime runtime;
+	runtime.addModule(module);
+	check(runtime.run("main") == xenon::InterpretResult::Ok, "run('main') failed");
+
+	// Green = 1 -> 20, Blue = 2 -> 30, Red = 0
+	const auto* number = std::get_if<double>(&runtime.lastValue());
+	check(number != nullptr && std::abs(*number - 50.0) < 1e-12, "enum value result wrong");
+
+	check(compileFails(R"(
+export module BadEnum;
+
+enum Color
+{
+	Red,
+	Green,
+};
+
+double main()
+{
+	return Color::Purple;
+}
+)", "unknown enumerator"),
+		  "an unknown enumerator should fail");
+
+	check(compileFails(R"(
+export module AmbiguousEnum;
+
+enum Left
+{
+	Shared,
+	OnlyLeft,
+};
+
+enum Right
+{
+	Shared,
+	OnlyRight,
+};
+
+double main()
+{
+	return Shared;
+}
+)", "ambiguous enumerator"),
+		  "an unqualified name shared by two enums should fail");
+}
+
 void testParseError()
 {
 	const std::string source = R"(
@@ -887,6 +971,7 @@ int main()
 		testIncrementRequiresTarget();
 		testTypeChecking();
 		testConstChecking();
+		testEnumValues();
 		testParseError();
 	}
 	catch (const std::exception& error)
