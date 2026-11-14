@@ -73,6 +73,7 @@ xenon::Module makeAddModule()
 	y.Name           = "y";
 	y.AccessModifier = xenon::Access::Public;
 	y.Constant       = true;
+	y.InitialValue   = 2.5;
 	point.Fields.push_back(std::move(y));
 
 	xenon::Method length;
@@ -94,6 +95,13 @@ xenon::Module makeAddModule()
 	pi.InitialValue = 3.14159;
 	module.Globals.push_back(std::move(pi));
 
+	module.Strings.push_back("hello");
+	xenon::Global greeting;
+	greeting.Type          = "string";
+	greeting.Name          = "greeting";
+	greeting.InitialString = 0;
+	module.Globals.push_back(std::move(greeting));
+
 	return module;
 }
 
@@ -111,7 +119,8 @@ void testRoundTrip()
 	check(loaded.Imports.size() == 1 && loaded.Imports[0] == "Core", "imports did not round-trip");
 	check(loaded.Functions.size() == 1, "function count did not round-trip");
 	check(loaded.Types.size() == 1, "type count did not round-trip");
-	check(loaded.Globals.size() == 1, "global count did not round-trip");
+	check(loaded.Globals.size() == 2, "global count did not round-trip");
+	check(loaded.Strings.size() == 1 && loaded.Strings[0] == "hello", "string pool did not round-trip");
 
 	const auto& add = loaded.Functions.front();
 	check(add.Name == "add", "function name did not round-trip");
@@ -135,10 +144,14 @@ void testRoundTrip()
 			  point.Methods.front().Body.code().size() == 4,
 		  "methods did not round-trip");
 	check(point.Fields[1].Constant && !point.Fields[0].Constant, "const field did not round-trip");
+	const auto* fieldValue = std::get_if<double>(&point.Fields[1].InitialValue);
+	check(fieldValue != nullptr && std::abs(*fieldValue - 2.5) < 1e-12,
+		  "field initializer did not round-trip");
 
 	check(loaded.Globals.front().Name == "pi" && loaded.Globals.front().Constant, "global did not round-trip");
 	const auto* pi = std::get_if<double>(&loaded.Globals.front().InitialValue);
 	check(pi != nullptr && std::abs(*pi - 3.14159) < 1e-12, "global value did not round-trip");
+	check(loaded.Globals[1].InitialString == 0, "global string initializer did not round-trip");
 }
 
 void testVmLoadsModule()

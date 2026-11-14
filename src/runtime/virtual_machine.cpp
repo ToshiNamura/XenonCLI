@@ -107,6 +107,7 @@ namespace xenon
 		_typeInfo.clear();
 		_globals.clear();
 		_globalInfo.clear();
+		_stringsByModule.clear();
 
 		const auto insertExecutable = [this](const std::string& moduleName, const std::string& name,
 											 const XenonBinary* body, std::size_t arity,
@@ -114,7 +115,7 @@ namespace xenon
 		{
 			Executable executable;
 			executable.Name     = name;
-			executable.Module   = moduleName;
+			executable.ModuleName = moduleName;
 			executable.Body     = body;
 			executable.Arity    = arity;
 			executable.Locals   = locals;
@@ -130,6 +131,8 @@ namespace xenon
 
 		for (const auto& module : _modules)
 		{
+			_stringsByModule[module.Name] = &module.Strings;
+
 			for (const auto& function : module.Functions)
 			{
 				insertExecutable(module.Name, function.Name, &function.Body, function.Arity,
@@ -162,9 +165,21 @@ namespace xenon
 				if (inserted)
 				{
 					_globalInfo[global.Name] = SymbolInfo{module.Name, global.Exported};
+					if (global.InitialString != xenon::NoString &&
+						global.InitialString < module.Strings.size() && _heap != nullptr)
+					{
+						position->second = xenon::Value{allocateString(module.Strings[global.InitialString])};
+					}
 				}
 			}
 		}
+	}
+
+	xenon::Ref xenon::VirtualMachine::allocateString(const std::string& text)
+	{
+		const xenon::Ref ref = _heap->allocate(xenon::ObjectKind::String);
+		_heap->get(ref)->Text = text;
+		return ref;
 	}
 
 	void xenon::VirtualMachine::checkVisible(const std::string& name, const std::string& module,
@@ -245,7 +260,7 @@ namespace xenon
 	{
 		Frame frame;
 		frame.binary = executable.Body;
-		frame.module = executable.Module;
+		frame.module = executable.ModuleName;
 		frame.ip     = 0;
 		frame.locals.resize(executable.Arity + executable.Locals);
 		for (std::size_t i = executable.Arity; i-- > 0;)
@@ -438,13 +453,32 @@ namespace xenon
 				const auto info = _typeInfo.find(typeName);
 				if (info != _typeInfo.end())
 				{
-					checkVisible(typeName, info->second.Module, info->second.Exported, frame.module);
+					checkVisible(typeName, info->second.ModuleName, info->second.Exported, frame.module);
 				}
 				const xenon::Ref ref      = _heap->allocate(xenon::ObjectKind::Object, typeName);
 				xenon::HeapObject* object = _heap->get(ref);
+				const std::vector<std::string>* typeStrings = nullptr;
+				const auto                      typeInfo    = _typeInfo.find(typeName);
+				if (typeInfo != _typeInfo.end())
+				{
+					const auto pool = _stringsByModule.find(typeInfo->second.ModuleName);
+					if (pool != _stringsByModule.end())
+					{
+						typeStrings = pool->second;
+					}
+				}
+
 				for (const auto& field : type->Fields)
 				{
-					object->Fields[field.Name] = xenon::Null{};
+					xenon::Value value = field.InitialValue;
+					if (field.InitialString != xenon::NoString && typeStrings != nullptr &&
+						field.InitialString < typeStrings->size())
+					{
+						value = xenon::Value{allocateString((*typeStrings)[field.InitialString])};
+					}
+					// Allocating a string may grow the heap and invalidate `object`.
+					object = _heap->get(ref);
+					object->Fields[field.Name] = value;
 				}
 				push(xenon::Value{ref});
 				break;
@@ -510,7 +544,7 @@ namespace xenon
 				const auto info = _globalInfo.find(name);
 				if (info != _globalInfo.end())
 				{
-					checkVisible(name, info->second.Module, info->second.Exported, frame.module);
+					checkVisible(name, info->second.ModuleName, info->second.Exported, frame.module);
 				}
 				push(position->second);
 				break;
@@ -527,7 +561,7 @@ namespace xenon
 				const auto info = _globalInfo.find(name);
 				if (info != _globalInfo.end())
 				{
-					checkVisible(name, info->second.Module, info->second.Exported, frame.module);
+					checkVisible(name, info->second.ModuleName, info->second.Exported, frame.module);
 				}
 				const xenon::Value value = pop();
 				position->second         = value;
@@ -746,7 +780,7 @@ namespace xenon
 				{
 					throw xenon::RuntimeError("unknown function: " + name);
 				}
-				checkVisible(executable->Name, executable->Module, executable->Exported, frame.module);
+				checkVisible(executable->Name, executable->ModuleName, executable->Exported, frame.module);
 				if (!executable->Defined)
 				{
 					callExternal(*executable, stack);

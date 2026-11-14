@@ -84,7 +84,7 @@ namespace xenon
 		struct Executable
 		{
 			std::string        Name;
-			std::string        Module;    ///< Module that defines the executable.
+			std::string        ModuleName; ///< Module that defines the executable.
 			const XenonBinary* Body      = nullptr;
 			std::size_t        Arity     = 0;
 			std::size_t        Locals    = 0;
@@ -104,6 +104,9 @@ namespace xenon
 
 		const Executable* findExecutable(std::string_view name) const noexcept;
 
+		/// Allocates a heap string for a constant initializer.
+		[[nodiscard]] Ref allocateString(const std::string& text);
+
 		/// Throws unless the symbol may be used from `fromModule`.
 		static void checkVisible(const std::string& name, const std::string& module, bool exported,
 								 std::string_view fromModule);
@@ -117,7 +120,7 @@ namespace xenon
 		std::vector<Module>                              _modules;
 		struct SymbolInfo
 		{
-			std::string Module;
+			std::string ModuleName;
 			bool        Exported = true;
 		};
 
@@ -126,6 +129,7 @@ namespace xenon
 		std::unordered_map<std::string, SymbolInfo>      _typeInfo;
 		std::unordered_map<std::string, Value>           _globals;
 		std::unordered_map<std::string, SymbolInfo>      _globalInfo;
+		std::unordered_map<std::string, const std::vector<std::string>*> _stringsByModule;
 		std::unordered_map<std::string, NativeFunction>  _natives;
 		std::vector<Frame>                               _frames;
 		VirtualHeap*                                     _heap = nullptr;

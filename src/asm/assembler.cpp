@@ -184,8 +184,38 @@ std::size_t xenon::Assembler::parseParams(const std::vector<Token>& tokens, std:
 	fail("expected ')' in signature");
 }
 
+void xenon::Assembler::assignGlobalValue(Global& global, const Token& token)
+{
+	if (token.IsString)
+	{
+		_out->Strings.push_back(token.Text);
+		global.InitialValue  = Value{Null{}};
+		global.InitialString = _out->Strings.size() - 1;
+		return;
+	}
+	global.InitialValue = parseValue(token);
+}
+
+void xenon::Assembler::assignFieldValue(Field& field, const Token& token)
+{
+	if (token.IsString)
+	{
+		_out->Strings.push_back(token.Text);
+		field.InitialValue  = Value{Null{}};
+		field.InitialString = _out->Strings.size() - 1;
+		return;
+	}
+	field.InitialValue = parseValue(token);
+}
+
 xenon::Value xenon::Assembler::parseValue(const Token& token)
 {
+	if (token.IsString)
+	{
+		// String constants live in the module pool; callers store the index separately.
+		_out->Strings.push_back(token.Text);
+		return Value{Null{}};
+	}
 	if (token.IsNumber)
 	{
 		return Value{std::strtod(token.Text.c_str(), nullptr)};
@@ -204,10 +234,6 @@ xenon::Value xenon::Assembler::parseValue(const Token& token)
 		{
 			return Value{Null{}};
 		}
-	}
-	if (token.IsString)
-	{
-		fail("string initial values are not supported yet");
 	}
 	fail("invalid initial value: " + token.Text);
 }
@@ -532,9 +558,9 @@ void xenon::Assembler::parseField(const std::vector<Token>& tokens)
 	{
 		++i;
 	}
-	if (i + 2 != tokens.size())
+	if (i + 2 > tokens.size() || (i + 2 < tokens.size() && tokens[i + 2].Text != "="))
 	{
-		fail("expected '.field [export] [const] [access] <type> <name>'");
+		fail("expected '.field [export] [const] [access] <type> <name> [= <value>]'");
 	}
 	if (!_pendingParents.empty())
 	{
@@ -550,6 +576,15 @@ void xenon::Assembler::parseField(const std::vector<Token>& tokens)
 	field.Attributes = std::move(_pendingAttributes);
 	field.TemplateParams = std::move(_pendingTemplates);
 	clearPending();
+
+	if (i + 3 < tokens.size())
+	{
+		assignFieldValue(field, tokens[i + 3]);
+	}
+	if (i + 3 > tokens.size() && i + 2 < tokens.size())
+	{
+		fail("expected a value after '=' in '.field'");
+	}
 
 	_currentType->Fields.push_back(std::move(field));
 }
@@ -707,7 +742,7 @@ void xenon::Assembler::parseVariable(const std::vector<Token>& tokens)
 	global.Constant = false;
 	if (i + 2 < tokens.size())
 	{
-		global.InitialValue = parseValue(tokens[i + 2]);
+		assignGlobalValue(global, tokens[i + 2]);
 	}
 	global.Attributes = std::move(_pendingAttributes);
 	global.TemplateParams = std::move(_pendingTemplates);
@@ -744,7 +779,7 @@ void xenon::Assembler::parseConstant(const std::vector<Token>& tokens)
 	global.Name = tokens[i + 1].Text;
 	global.Exported = exported;
 	global.Constant = true;
-	global.InitialValue = parseValue(tokens[i + 2]);
+	assignGlobalValue(global, tokens[i + 2]);
 	global.Attributes = std::move(_pendingAttributes);
 	global.TemplateParams = std::move(_pendingTemplates);
 	clearPending();

@@ -107,6 +107,9 @@ namespace xenon
 		std::vector<TemplateParam>      TemplateParams;
 	};
 
+	/// Sentinel for "no string constant".
+	inline constexpr std::size_t NoString = static_cast<std::size_t>(-1);
+
 	/// A field of a class or struct.
 	struct Field
 	{
@@ -115,6 +118,8 @@ namespace xenon
 		Access                          AccessModifier = Access::Private; ///< Public by default in a struct.
 		bool                            Exported       = false;
 		bool                            Constant       = false;
+		Value                           InitialValue   = Null{};
+		std::size_t                     InitialString  = NoString; ///< Index into `Module::Strings`.
 		AttributeList                   Attributes;
 		std::vector<TemplateParam>      TemplateParams;
 	};
@@ -155,9 +160,10 @@ namespace xenon
 	{
 		std::string                     Type;
 		std::string                     Name;
-		bool                            Exported     = false;
-		bool                            Constant     = false;
-		Value                           InitialValue = Null{};
+		bool                            Exported      = false;
+		bool                            Constant      = false;
+		Value                           InitialValue  = Null{};
+		std::size_t                     InitialString = NoString; ///< Index into `Module::Strings`.
 		AttributeList                   Attributes;
 		std::vector<TemplateParam>      TemplateParams;
 	};
@@ -172,6 +178,7 @@ namespace xenon
 		std::string              Name;
 		std::vector<std::string> Imports;
 		AttributeList            Attributes; ///< Module attributes (`.meta`).
+		std::vector<std::string> Strings;    ///< String constants used by initializers.
 		std::vector<Function>    Functions;
 		std::vector<Type>        Types;
 		std::vector<Global>      Globals;

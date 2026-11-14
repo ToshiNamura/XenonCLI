@@ -323,28 +323,31 @@ xenon::TypeDecl xenon::Parser::parseTypeDecl()
 		}
 		else
 		{
-			decl.Fields.push_back(FieldDecl{memberType, memberName, memberConstant});
-			if (match(xenon::TokenType::Assign))
+			auto addField = [&decl, &memberType, memberConstant](std::string name, std::unique_ptr<Expr> init)
 			{
-				while (!check(xenon::TokenType::Semicolon) && !check(xenon::TokenType::Comma) &&
-					   !check(xenon::TokenType::End))
+				FieldDecl field;
+				field.Type     = memberType;
+				field.Name     = std::move(name);
+				field.Constant = memberConstant;
+				field.Init     = std::move(init);
+				decl.Fields.push_back(std::move(field));
+			};
+
+			auto initializer = [this]() -> std::unique_ptr<Expr>
+			{
+				if (!match(xenon::TokenType::Assign))
 				{
-					advance();
+					return nullptr;
 				}
-			}
+				return parseExpression();
+			};
+
+			addField(memberName, initializer());
 			while (match(xenon::TokenType::Comma))
 			{
 				const std::string name = std::string(
 					consume(xenon::TokenType::Identifier, "expected a field name").Lexeme);
-				decl.Fields.push_back(FieldDecl{memberType, name, memberConstant});
-				if (match(xenon::TokenType::Assign))
-				{
-					while (!check(xenon::TokenType::Semicolon) && !check(xenon::TokenType::Comma) &&
-						   !check(xenon::TokenType::End))
-					{
-						advance();
-					}
-				}
+				addField(name, initializer());
 			}
 			consume(xenon::TokenType::Semicolon, "expected ';' after field declaration");
 		}

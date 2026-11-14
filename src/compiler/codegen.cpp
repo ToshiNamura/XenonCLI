@@ -382,6 +382,7 @@ namespace xenon
 				}
 			}
 
+			out.Strings = _stringConstants;
 			return true;
 		}
 		catch (const CodeGenError&)
@@ -518,12 +519,7 @@ namespace xenon
 		{
 			for (const auto& field : decl.Fields)
 			{
-				xenon::Field compiled;
-				compiled.Type           = field.Type;
-				compiled.Name           = field.Name;
-				compiled.AccessModifier = decl.Kind == xenon::DeclKind::Struct ? Access::Public : Access::Private;
-				compiled.Constant       = field.Constant;
-				type.Fields.push_back(std::move(compiled));
+				type.Fields.push_back(compileField(field, false, decl.Kind == xenon::DeclKind::Struct));
 			}
 
 			for (const auto& method : decl.Methods)
@@ -533,6 +529,31 @@ namespace xenon
 		}
 
 		out.Types.push_back(std::move(type));
+	}
+
+	xenon::Field xenon::CodeGenerator::compileField(const xenon::FieldDecl& field, bool substitute,
+													bool structType)
+	{
+		xenon::Field compiled;
+		compiled.Type           = substitute ? substituteType(field.Type) : field.Type;
+		compiled.Name           = field.Name;
+		compiled.Constant       = field.Constant;
+		compiled.AccessModifier = structType ? Access::Public : Access::Private;
+
+		if (field.Init)
+		{
+			const std::string valueType = typeOf(*field.Init);
+			if (!isAssignable(compiled.Type, valueType))
+			{
+				fail("cannot initialize the field '" + field.Name + "' of type " + compiled.Type +
+						 " with a value of type " + valueType,
+					 field.Init->Line);
+			}
+			const ConstantValue initial = evaluateConstant(field.Init.get());
+			compiled.InitialValue       = initial.Constant;
+			compiled.InitialString      = initial.StringIndex;
+		}
+		return compiled;
 	}
 
 	void xenon::CodeGenerator::emitType(const xenon::TypeDecl& decl, const std::string& name, xenon::Module& out)
@@ -550,12 +571,7 @@ namespace xenon
 		{
 			for (const auto& field : decl.Fields)
 			{
-				xenon::Field compiled;
-				compiled.Type           = substituteType(field.Type);
-				compiled.Name           = field.Name;
-				compiled.AccessModifier = decl.Kind == xenon::DeclKind::Struct ? Access::Public : Access::Private;
-				compiled.Constant       = field.Constant;
-				type.Fields.push_back(std::move(compiled));
+				type.Fields.push_back(compileField(field, true, decl.Kind == xenon::DeclKind::Struct));
 			}
 
 			for (const auto& method : decl.Methods)
@@ -573,30 +589,43 @@ namespace xenon
 		compiled.Name         = global.Name;
 		compiled.Type         = global.Type;
 		compiled.Constant     = global.Constant;
-		compiled.InitialValue = evaluateConstant(global.Init.get());
+		const xenon::CodeGenerator::ConstantValue initial = evaluateConstant(global.Init.get());
+		compiled.InitialValue  = initial.Constant;
+		compiled.InitialString = initial.StringIndex;
 		out.Globals.push_back(std::move(compiled));
 	}
 
-	xenon::Value xenon::CodeGenerator::evaluateConstant(const xenon::Expr* init)
+	std::size_t xenon::CodeGenerator::addStringConstant(const std::string& text)
+	{
+		_stringConstants.push_back(text);
+		return _stringConstants.size() - 1;
+	}
+
+	xenon::CodeGenerator::ConstantValue xenon::CodeGenerator::evaluateConstant(const xenon::Expr* init)
 	{
 		if (init == nullptr)
 		{
-			return xenon::Null{};
+			return {};
 		}
 
 		if (const auto* number = dynamic_cast<const xenon::NumberExpr*>(init))
 		{
-			return xenon::Value{number->Value};
+			return ConstantValue{xenon::Value{number->Value}, NoString};
 		}
 
 		if (const auto* boolean = dynamic_cast<const xenon::BoolExpr*>(init))
 		{
-			return xenon::Value{boolean->Value};
+			return ConstantValue{xenon::Value{boolean->Value}, NoString};
 		}
 
 		if (dynamic_cast<const xenon::NullExpr*>(init) != nullptr)
 		{
-			return xenon::Null{};
+			return {};
+		}
+
+		if (const auto* text = dynamic_cast<const xenon::StringExpr*>(init))
+		{
+			return ConstantValue{xenon::Null{}, addStringConstant(text->Value)};
 		}
 
 		if (const auto* variable = dynamic_cast<const xenon::VariableExpr*>(init))
@@ -604,79 +633,79 @@ namespace xenon
 			const auto enumerator = _enumerators.find(variable->Name);
 			if (enumerator != _enumerators.end())
 			{
-				return xenon::Value{enumerator->second};
+				return ConstantValue{xenon::Value{enumerator->second}, NoString};
 			}
 			const auto shortEnumerator = _shortEnumerators.find(variable->Name);
 			if (shortEnumerator != _shortEnumerators.end())
 			{
-				return xenon::Value{shortEnumerator->second.second};
+				return ConstantValue{xenon::Value{shortEnumerator->second.second}, NoString};
 			}
-		}
-
-		if (dynamic_cast<const xenon::StringExpr*>(init) != nullptr)
-		{
-			fail("global string variables are not supported yet");
 		}
 
 		if (const auto* unary = dynamic_cast<const xenon::UnaryExpr*>(init))
 		{
 			if (unary->Operation == xenon::UnaryExpr::Op::Negate)
 			{
-				const xenon::Value operand = evaluateConstant(unary->Operand.get());
-				if (const auto* number = std::get_if<double>(&operand))
+				const ConstantValue operand = evaluateConstant(unary->Operand.get());
+				if (const auto* number = std::get_if<double>(&operand.Constant))
 				{
-					return xenon::Value{-*number};
+					return ConstantValue{xenon::Value{-*number}, NoString};
 				}
 			}
 		}
 
 		if (const auto* binary = dynamic_cast<const xenon::BinaryExpr*>(init))
 		{
-			const xenon::Value left  = evaluateConstant(binary->Left.get());
-			const xenon::Value right = evaluateConstant(binary->Right.get());
-			const auto*        a     = std::get_if<double>(&left);
-			const auto*        b     = std::get_if<double>(&right);
+			const ConstantValue left  = evaluateConstant(binary->Left.get());
+			const ConstantValue right = evaluateConstant(binary->Right.get());
+			const auto*         a     = std::get_if<double>(&left.Constant);
+			const auto*         b     = std::get_if<double>(&right.Constant);
 			if (a == nullptr || b == nullptr)
 			{
-				fail("global initializer must be a constant expression");
+				fail("the initializer must be a constant expression");
 			}
+
+			const auto number = [](double value)
+			{
+				return ConstantValue{xenon::Value{value}, NoString};
+			};
 
 			switch (binary->Operation)
 			{
-				case xenon::BinaryExpr::Op::Add:      return xenon::Value{*a + *b};
-				case xenon::BinaryExpr::Op::Subtract: return xenon::Value{*a - *b};
-				case xenon::BinaryExpr::Op::Multiply: return xenon::Value{*a * *b};
+				case xenon::BinaryExpr::Op::Add:      return number(*a + *b);
+				case xenon::BinaryExpr::Op::Subtract: return number(*a - *b);
+				case xenon::BinaryExpr::Op::Multiply: return number(*a * *b);
 				case xenon::BinaryExpr::Op::Divide:
 					if (*b == 0.0)
 					{
 						fail("division by zero in a constant expression");
 					}
-					return xenon::Value{*a / *b};
+					return number(*a / *b);
 				case xenon::BinaryExpr::Op::Modulo:
 					if (*b == 0.0)
 					{
 						fail("division by zero in a constant expression");
 					}
-					return xenon::Value{std::fmod(*a, *b)};
+					return number(std::fmod(*a, *b));
 				case xenon::BinaryExpr::Op::BitAnd:
-					return xenon::Value{static_cast<double>(static_cast<std::int64_t>(*a) & static_cast<std::int64_t>(*b))};
+					return number(static_cast<double>(static_cast<std::int64_t>(*a) & static_cast<std::int64_t>(*b)));
 				case xenon::BinaryExpr::Op::BitOr:
-					return xenon::Value{static_cast<double>(static_cast<std::int64_t>(*a) | static_cast<std::int64_t>(*b))};
+					return number(static_cast<double>(static_cast<std::int64_t>(*a) | static_cast<std::int64_t>(*b)));
 				case xenon::BinaryExpr::Op::BitXor:
-					return xenon::Value{static_cast<double>(static_cast<std::int64_t>(*a) ^ static_cast<std::int64_t>(*b))};
+					return number(static_cast<double>(static_cast<std::int64_t>(*a) ^ static_cast<std::int64_t>(*b)));
 				case xenon::BinaryExpr::Op::ShiftLeft:
-					return xenon::Value{static_cast<double>(static_cast<std::int64_t>(
+					return number(static_cast<double>(static_cast<std::int64_t>(
 						static_cast<std::uint64_t>(static_cast<std::int64_t>(*a))
-						<< static_cast<std::uint64_t>(static_cast<std::int64_t>(*b) & 63)))};
+						<< static_cast<std::uint64_t>(static_cast<std::int64_t>(*b) & 63))));
 				case xenon::BinaryExpr::Op::ShiftRight:
-					return xenon::Value{static_cast<double>(static_cast<std::int64_t>(*a) >>
-														   (static_cast<std::int64_t>(*b) & 63))};
+					return number(static_cast<double>(static_cast<std::int64_t>(*a) >>
+													 (static_cast<std::int64_t>(*b) & 63)));
 				default:
-					fail("global initializer must be a constant expression");
+					fail("the initializer must be a constant expression");
 			}
 		}
 
-		fail("global initializer must be a constant expression");
+		fail("the initializer must be a constant expression");
 	}
 
 	void xenon::CodeGenerator::enterScope()
@@ -1386,7 +1415,12 @@ namespace xenon
 
 			emitOpcode(Instruction::Ldl);
 			emitU16(tempSlot);
-			emitConstant(evaluateConstant(clause.Value.get()));
+			const ConstantValue caseValue = evaluateConstant(clause.Value.get());
+			if (caseValue.StringIndex != NoString)
+			{
+				fail("'case' labels must be numeric constants");
+			}
+			emitConstant(caseValue.Constant);
 			emitOpcode(Instruction::Equ);
 			const auto falseJump = emitJump(Instruction::Jif);
 			bodyJumpForCase[i]   = emitJump(Instruction::Jmp);

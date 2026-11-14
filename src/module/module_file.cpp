@@ -17,7 +17,8 @@ namespace xenon
 	namespace
 	{
 		constexpr char          Magic[4] = {'X', 'E', 'N', 'M'};
-		constexpr std::uint32_t Version  = 6;
+		constexpr std::uint32_t Version  = 7;
+		constexpr std::uint32_t NoStringIndex = 0xFFFFFFFFu;
 		constexpr std::uint32_t MaxCount = 1u << 22;
 
 		void checkCount(std::uint32_t count)
@@ -489,6 +490,12 @@ void xenon::writeModuleFile(std::ostream& os, const Module& module)
 
 	writeAttributes(os, module.Attributes);
 
+	writeU32(os, static_cast<std::uint32_t>(module.Strings.size()));
+	for (const auto& text : module.Strings)
+	{
+		writeString(os, text);
+	}
+
 	writeU32(os, static_cast<std::uint32_t>(module.Functions.size()));
 	for (const auto& function : module.Functions)
 	{
@@ -511,6 +518,10 @@ void xenon::writeModuleFile(std::ostream& os, const Module& module)
 			os.put(static_cast<char>(static_cast<std::uint8_t>(field.AccessModifier)));
 			os.put(field.Exported ? 1 : 0);
 			os.put(field.Constant ? 1 : 0);
+			writeValue(os, field.InitialValue);
+			writeU32(os, field.InitialString == xenon::NoString
+							 ? NoStringIndex
+							 : static_cast<std::uint32_t>(field.InitialString));
 			writeAttributes(os, field.Attributes);
 			writeTemplates(os, field.TemplateParams);
 		}
@@ -546,6 +557,9 @@ void xenon::writeModuleFile(std::ostream& os, const Module& module)
 		os.put(global.Exported ? 1 : 0);
 		os.put(global.Constant ? 1 : 0);
 		writeValue(os, global.InitialValue);
+		writeU32(os, global.InitialString == NoString
+						 ? NoStringIndex
+						 : static_cast<std::uint32_t>(global.InitialString));
 		writeAttributes(os, global.Attributes);
 		writeTemplates(os, global.TemplateParams);
 	}
@@ -578,6 +592,14 @@ void xenon::readModuleFile(std::istream& is, Module& out)
 	}
 
 	readAttributes(is, out.Attributes);
+
+	const auto stringCount = readU32(is);
+	checkCount(stringCount);
+	out.Strings.reserve(stringCount);
+	for (std::uint32_t i = 0; i < stringCount; ++i)
+	{
+		out.Strings.emplace_back(readString(is));
+	}
 
 	const auto functionCount = readU32(is);
 	checkCount(functionCount);
@@ -627,6 +649,9 @@ void xenon::readModuleFile(std::istream& is, Module& out)
 			field.AccessModifier = static_cast<Access>(access);
 			field.Exported       = isExported != 0;
 			field.Constant       = isConstant != 0;
+			field.InitialValue   = readValue(is);
+			const auto initialString = readU32(is);
+			field.InitialString = initialString == NoStringIndex ? xenon::NoString : static_cast<std::size_t>(initialString);
 			readAttributes(is, field.Attributes);
 			readTemplates(is, field.TemplateParams);
 			type.Fields.push_back(std::move(field));
@@ -688,6 +713,8 @@ void xenon::readModuleFile(std::istream& is, Module& out)
 		global.Exported     = exported != 0;
 		global.Constant     = constant != 0;
 		global.InitialValue = readValue(is);
+		const auto initialString = readU32(is);
+		global.InitialString = initialString == NoStringIndex ? xenon::NoString : static_cast<std::size_t>(initialString);
 		readAttributes(is, global.Attributes);
 		readTemplates(is, global.TemplateParams);
 		out.Globals.push_back(std::move(global));

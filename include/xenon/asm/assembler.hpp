@@ -84,6 +84,10 @@ namespace xenon
 											  std::vector<std::string>& paramTypes);
 		[[nodiscard]] Value parseValue(const Token& token);
 
+		void assignGlobalValue(Global& global, const Token& token);
+
+		void assignFieldValue(Field& field, const Token& token);
+
 		static bool parseAccess(const std::string& text, Access& out);
 		static void finishParamGroup(std::vector<std::string>& group,
 									 std::vector<std::string>& paramTypes,
