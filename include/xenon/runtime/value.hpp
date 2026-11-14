@@ -30,7 +30,11 @@ namespace xenon
 	/// The set of types a Xenon runtime value can hold.
 	using Value = std::variant<double, bool, Null, Ref>;
 
-	/// Human-readable representation of a value (used by the CLI and the debugger).
+	/// Shortest round-trip textual form of `value` (used by the CLI, the
+	/// disassembler and the debugger).
+	[[nodiscard]] std::string toNumberString(double value);
+
+	/// Human-readable representation of a value.
 	[[nodiscard]] std::string toString(const Value& value);
 
 	inline std::ostream& operator<<(std::ostream& os, const Value& value)

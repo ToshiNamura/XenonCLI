@@ -7,29 +7,35 @@ xenon::Module xenon::environmentModule()
 	xenon::Module module;
 	module.Name = "xenon.env";
 
-	xenon::Symbol object;
-	object.Name      = "Object";
-	object.Kind      = xenon::SymbolKind::Class;
-	object.Signature = "class Object";
-	module.Symbols.push_back(std::move(object));
+	xenon::Type object;
+	object.Name    = "Object";
+	object.Kind    = xenon::TypeKind::Class;
+	object.Defined = false;
+	module.Types.push_back(std::move(object));
 
-	xenon::Symbol string;
-	string.Name      = "String";
-	string.Kind      = xenon::SymbolKind::Class;
-	string.Signature = "class String";
-	module.Symbols.push_back(std::move(string));
+	xenon::Type string;
+	string.Name    = "String";
+	string.Kind    = xenon::TypeKind::Class;
+	string.Defined = false;
+	string.Parents.push_back(xenon::Parent{xenon::Access::Public, "Object"});
+	module.Types.push_back(std::move(string));
 
-	xenon::Symbol vector;
-	vector.Name      = "Vector";
-	vector.Kind      = xenon::SymbolKind::Class;
-	vector.Signature = "template class Vector<Type>";
-	module.Symbols.push_back(std::move(vector));
+	xenon::Type vector;
+	vector.Name    = "Vector";
+	vector.Kind    = xenon::TypeKind::Class;
+	vector.Defined = false;
+	vector.Parents.push_back(xenon::Parent{xenon::Access::Public, "Object"});
+	xenon::TemplateParam parameter;
+	parameter.TypeName = "Type";
+	vector.TemplateParams.push_back(std::move(parameter));
+	module.Types.push_back(std::move(vector));
 
-	xenon::Symbol environment;
-	environment.Name      = "Environment";
-	environment.Kind      = xenon::SymbolKind::Class;
-	environment.Signature = "class Environment";
-	module.Symbols.push_back(std::move(environment));
+	xenon::Type environment;
+	environment.Name    = "Environment";
+	environment.Kind    = xenon::TypeKind::Class;
+	environment.Defined = false;
+	environment.Parents.push_back(xenon::Parent{xenon::Access::Public, "Object"});
+	module.Types.push_back(std::move(environment));
 
 	return module;
 }

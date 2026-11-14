@@ -2,11 +2,14 @@
 BasedOnStyle: LLVM
 IndentWidth: 4
 TabWidth: 4
-UseTab: Never
-ColumnLimit: 100
+UseTab: ForIndentation
+ColumnLimit: 0
 BreakBeforeBraces: Allman
 NamespaceIndentation: None
 PointerAlignment: Left
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignAfterOpenBracket: Align
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: None

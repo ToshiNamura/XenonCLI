@@ -472,7 +472,7 @@ std::unique_ptr<xenon::Stmt> xenon::Parser::parseStatement()
 
 	auto stmt = std::make_unique<xenon::ExprStmt>();
 	stmt->Line = _current.Line;
-	stmt->Expr = parseExpression();
+	stmt->Expression = parseExpression();
 	consume(xenon::TokenType::Semicolon, "expected ';' after expression");
 	return stmt;
 }
@@ -513,7 +513,7 @@ std::unique_ptr<xenon::Stmt> xenon::Parser::parseForStatement()
 		else
 		{
 			auto expr = std::make_unique<xenon::ExprStmt>();
-			expr->Expr = parseExpression();
+			expr->Expression = parseExpression();
 			consume(xenon::TokenType::Semicolon, "expected ';' after for initializer");
 			stmt->Init = std::move(expr);
 		}

@@ -5,8 +5,8 @@
 #include <string>
 #include <variant>
 
+#include <xenon/asm/model.hpp>
 #include <xenon/compiler/compiler.hpp>
-#include <xenon/module/module.hpp>
 #include <xenon/runtime/runtime.hpp>
 
 int g_failures = 0;
@@ -370,6 +370,47 @@ double main()
 	check(number != nullptr && std::abs(*number - 20.0) < 1e-12, "main() result wrong");
 }
 
+void testCrossModuleCall()
+{
+	const std::string library = R"(
+export module Lib;
+
+double add(double a, double b)
+{
+	return a + b;
+}
+)";
+
+	const auto libraryModule = compileOrFail(library, "library");
+
+	const std::string hint = "double add(double a, double b);\n";
+	xenon::Module     hintsModule;
+	xenon::Compiler   hintCompiler;
+	check(hintCompiler.compileHints(hint, hintsModule), "compileHints failed");
+
+	const std::string application = R"(
+export module App;
+
+double main()
+{
+	return add(2.0, 3.0);
+}
+)";
+
+	xenon::Module   applicationModule;
+	xenon::Compiler compiler;
+	check(compiler.compile(application, applicationModule, {hintsModule}),
+		  "compile application failed: " + compiler.lastError());
+
+	xenon::Runtime runtime;
+	runtime.addModule(libraryModule);
+	runtime.addModule(applicationModule);
+	check(runtime.run("main") == xenon::InterpretResult::Ok, "run('main') failed");
+
+	const auto* number = std::get_if<double>(&runtime.lastValue());
+	check(number != nullptr && std::abs(*number - 5.0) < 1e-12, "cross-module call result wrong");
+}
+
 void testParseError()
 {
 	const std::string source = R"(
@@ -398,6 +439,7 @@ int main()
 		testClassesAndFields();
 		testTemplates();
 		testGlobals();
+		testCrossModuleCall();
 		testParseError();
 	}
 	catch (const std::exception& error)

@@ -152,7 +152,7 @@ namespace xenon
 			{
 				xenon::Module module;
 				readModuleFile(path, module);
-				if (module.find("main") != nullptr)
+				if (module.findFunction("main") != nullptr)
 				{
 					return xenon::Manifest::fromModule(module).toString();
 				}

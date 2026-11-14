@@ -51,20 +51,48 @@ int code = runtime.runMain("main", {"a", "b"}, {});
 `String` (текст).
 
 ```cpp
-struct HeapObject {
+struct HeapObject
+{
     ObjectKind Kind;
-    std::string ClassName;                        // для Object
+    std::string ClassName;                         // для Object
     std::unordered_map<std::string, Value> Fields; // для Object
     std::vector<Value> Elements;                   // для Array
     std::string Text;                              // для String
 };
 ```
 
+## Модель модуля
+
+`xenon::Module` (`xenon/asm/model.hpp`) — единое представление кода и данных:
+
+```cpp
+struct Module
+{
+    std::string Name;
+    std::vector<std::string> Imports;
+    AttributeList Attributes;     // атрибуты модуля
+    std::vector<Function> Functions;
+    std::vector<Type> Types;
+    std::vector<Global> Globals;
+};
+```
+
+| Тип | Поля |
+| --- | --- |
+| `Function` | `Name`, `Signature`, `Exported`, `Defined`, `Arity`, `Locals`, `Body`, `Attributes`, `TemplateParams` |
+| `Method` | то же + `AccessModifier` |
+| `Type` | `Name`, `Kind`, `Exported`, `Defined`, `Fields`, `Methods`, `Enumerators`, `Parents`, `Attributes`, `TemplateParams` |
+| `Field` | `Type`, `Name`, `AccessModifier`, `Exported`, `Attributes`, `TemplateParams` |
+| `Global` | `Type`, `Name`, `Exported`, `Constant`, `InitialValue`, `Attributes`, `TemplateParams` |
+
+`Module` — копируемый тип: `Runtime` и `VirtualMachine` хранят собственные копии,
+а атрибуты разделяются через `std::shared_ptr`.
+
 ## Runtime
 
 | Группа | Методы |
 | --- | --- |
-| модули | `addModule`, `loadModuleFile`, `moduleCount`, `modules`, `find` |
+| модули | `addModule`, `loadModuleFile`, `moduleCount`, `modules`, `findFunction`, `findMethod`, `findType`, `hasFunction` |
 | объекты | `newObject`, `newArray`, `newString`, `objectKind`, `className` |
 | поля | `setField`, `getField` |
 | массивы | `arrayLength`, `setElement`, `getElement` |
@@ -78,6 +106,18 @@ struct HeapObject {
 выход за границы массива, деление на ноль и т. д.) выбрасываются как
 `xenon::RuntimeError`.
 
+## VirtualMachine
+
+| Метод | Назначение |
+| --- | --- |
+| `load`, `loadAll` | загрузить один или несколько модулей |
+| `findFunction`, `findMethod`, `findType`, `hasFunction` | поиск после связывания |
+| `registerNative` | связать внешнее объявление с хост-функцией |
+| `run` | выполнить функцию/метод по имени |
+| `interpret` | выполнить сырой `XenonBinary` (отладка/тесты) |
+| `lastValue` | результат последнего `ret` |
+| `setHeap` | привязать кучу для `str`/`new` |
+
 ## Библиотека `xenon.env`
 
 | Класс | Методы |
@@ -88,3 +128,11 @@ struct HeapObject {
 | `Environment` | `registerClass`, `hasClass`, `create`, `size` |
 
 Встроенный модуль для `Runtime` создаётся функцией `environmentModule()`.
+
+## Формат `.module` и Xenon ASM
+
+- `writeModuleFile` / `readModuleFile` — сериализация `Module` (версия 5).
+- `Assembler::assemble` — текст `.asm` → `Module`.
+- `disassemble` — `Module` → текст `.asm`.
+
+Подробности — в [bytecode.md](bytecode.md) и [xenon-asm.md](xenon-asm.md).

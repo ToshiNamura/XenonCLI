@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <string>
 
-#include <xenon/module/module.hpp>
+#include <xenon/asm/model.hpp>
 
 namespace xenon
 {
