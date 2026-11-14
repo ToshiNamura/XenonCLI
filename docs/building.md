@@ -3,10 +3,11 @@
 ## Требования
 
 - CMake ≥ 3.24
-- Компилятор с поддержкой C++23 (`std::format`, `std::string::ends_with`):
+- Компилятор с поддержкой C++23 (`std::string::ends_with`, `.contains`,
+  `std::to_chars` для `double`):
   - MSVC ≥ 19.34 (VS 2022 17.4+)
-  - GCC ≥ 13
-  - Clang ≥ 17
+  - GCC ≥ 12
+  - Clang ≥ 15
 - Ninja (для пресетов)
 
 На Windows запускайте команды из **Developer PowerShell** (или `x64 Native Tools

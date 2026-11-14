@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <format>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -44,7 +43,7 @@ namespace xenon
 
 		std::string formatNumber(double value)
 		{
-			std::string text = std::format("{}", value);
+			std::string text = toNumberString(value);
 			if (text.find_first_of(".eE") == std::string::npos)
 			{
 				text += ".0";
