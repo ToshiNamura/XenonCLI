@@ -87,6 +87,8 @@ namespace xenon
 
 		void compileMethod(const FunctionDecl& method, Type& type);
 
+		[[nodiscard]] Field compileField(const FieldDecl& field, bool substitute, bool structType);
+
 		void compileTypeDecl(const TypeDecl& decl, Module& out);
 
 		void compileGlobalVar(const GlobalVarDecl& global, Module& out);
@@ -138,7 +140,15 @@ namespace xenon
 
 		void resolveGlobal(const std::string& name);
 
-		[[nodiscard]] Value evaluateConstant(const Expr* init);
+		struct ConstantValue
+		{
+			Value       Value       = Null{};
+			std::size_t StringIndex = NoString; ///< Index into the module string pool.
+		};
+
+		[[nodiscard]] ConstantValue evaluateConstant(const Expr* init);
+
+		[[nodiscard]] std::size_t addStringConstant(const std::string& text);
 
 		[[nodiscard]] std::string localType(const std::string& name);
 
@@ -208,6 +218,7 @@ namespace xenon
 		std::unordered_map<std::string, std::unordered_set<std::string>> _constFields;
 		std::unordered_map<std::string, std::vector<std::string>> _functionParams;
 		std::unordered_map<std::string, std::string>              _functionReturns;
+		std::vector<std::string>                                  _stringConstants;
 		std::unordered_map<std::string, double>                   _enumerators; ///< `Enum::Name` → value.
 		std::unordered_map<std::string, std::pair<std::string, double>> _shortEnumerators; ///< `Name` → type and value.
 		std::unordered_set<std::string>                           _ambiguousEnumerators;

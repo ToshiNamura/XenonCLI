@@ -107,6 +107,7 @@ namespace xenon
 		_typeInfo.clear();
 		_globals.clear();
 		_globalInfo.clear();
+		_stringsByModule.clear();
 
 		const auto insertExecutable = [this](const std::string& moduleName, const std::string& name,
 											 const XenonBinary* body, std::size_t arity,
@@ -130,6 +131,8 @@ namespace xenon
 
 		for (const auto& module : _modules)
 		{
+			_stringsByModule[module.Name] = &module.Strings;
+
 			for (const auto& function : module.Functions)
 			{
 				insertExecutable(module.Name, function.Name, &function.Body, function.Arity,
@@ -162,9 +165,21 @@ namespace xenon
 				if (inserted)
 				{
 					_globalInfo[global.Name] = SymbolInfo{module.Name, global.Exported};
+					if (global.InitialString != xenon::NoString &&
+						global.InitialString < module.Strings.size() && _heap != nullptr)
+					{
+						position->second = xenon::Value{allocateString(module.Strings[global.InitialString])};
+					}
 				}
 			}
 		}
+	}
+
+	xenon::Ref xenon::VirtualMachine::allocateString(const std::string& text)
+	{
+		const xenon::Ref ref = _heap->allocate(xenon::ObjectKind::String);
+		_heap->get(ref)->Text = text;
+		return ref;
 	}
 
 	void xenon::VirtualMachine::checkVisible(const std::string& name, const std::string& module,
@@ -442,9 +457,28 @@ namespace xenon
 				}
 				const xenon::Ref ref      = _heap->allocate(xenon::ObjectKind::Object, typeName);
 				xenon::HeapObject* object = _heap->get(ref);
+				const std::vector<std::string>* typeStrings = nullptr;
+				const auto                      typeInfo    = _typeInfo.find(typeName);
+				if (typeInfo != _typeInfo.end())
+				{
+					const auto pool = _stringsByModule.find(typeInfo->second.Module);
+					if (pool != _stringsByModule.end())
+					{
+						typeStrings = pool->second;
+					}
+				}
+
 				for (const auto& field : type->Fields)
 				{
-					object->Fields[field.Name] = xenon::Null{};
+					xenon::Value value = field.InitialValue;
+					if (field.InitialString != xenon::NoString && typeStrings != nullptr &&
+						field.InitialString < typeStrings->size())
+					{
+						value = xenon::Value{allocateString((*typeStrings)[field.InitialString])};
+					}
+					// Allocating a string may grow the heap and invalidate `object`.
+					object = _heap->get(ref);
+					object->Fields[field.Name] = value;
 				}
 				push(xenon::Value{ref});
 				break;

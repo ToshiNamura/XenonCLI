@@ -35,7 +35,7 @@ const std::string kSource = R"(
     .template <T = double>
     .parent public Base
     .class export Point
-        .field public double x
+        .field public double x = 1.5
         .field const public double y
         .method public double length()
             ldl 0
@@ -53,6 +53,7 @@ const std::string kSource = R"(
 
 .data
     .variable export double scale 2.0
+    .variable string title "demo"
     .constant double version 1.0
 .end
 
@@ -161,6 +162,8 @@ void testAssembler()
 	check(point.Fields.size() == 2, "two fields");
 	check(point.Fields[0].AccessModifier == xenon::Access::Public, "first field public");
 	check(!point.Fields[0].Constant, "first field is mutable");
+	const auto* firstFieldValue = std::get_if<double>(&point.Fields[0].InitialValue);
+	check(firstFieldValue != nullptr && *firstFieldValue == 1.5, "field initializer parsed");
 	check(point.Fields[1].AccessModifier == xenon::Access::Public, "second field public");
 	check(point.Fields[1].Constant, "second field constant");
 	check(point.Methods.size() == 1, "one method");
@@ -172,9 +175,11 @@ void testAssembler()
 	check(color.Kind == xenon::TypeKind::Enum, "color is enum");
 	check(color.Enumerators.size() == 2, "two enumerators");
 
-	check(module.Globals.size() == 2, "two globals");
+	check(module.Globals.size() == 3, "three globals");
 	check(!module.Globals[0].Constant, "variable is not constant");
-	check(module.Globals[1].Constant, "constant is constant");
+	check(module.Strings.size() == 1 && module.Strings[0] == "demo", "string pool populated");
+	check(module.Globals[1].InitialString == 0, "string initializer index");
+	check(module.Globals[2].Constant, "constant is constant");
 
 	check(module.Functions.size() == 1, "one function");
 	check(module.Functions.front().Name == "main", "function name");
@@ -276,6 +281,10 @@ void testDisassembler()
 		  "round-tripped method body");
 	check(roundTripped.Types[0].Fields.size() == 2 && roundTripped.Types[0].Fields[1].Constant,
 		  "round-tripped const field");
+	const auto* roundTrippedValue = std::get_if<double>(&roundTripped.Types[0].Fields[0].InitialValue);
+	check(roundTrippedValue != nullptr && *roundTrippedValue == 1.5, "round-tripped field initializer");
+	check(roundTripped.Strings.size() == 1 && roundTripped.Globals[1].InitialString == 0,
+		  "round-tripped string constant");
 }
 
 int main()

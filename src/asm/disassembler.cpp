@@ -299,7 +299,17 @@ namespace xenon
 						os << " const";
 					}
 					os << ' ' << accessName(field.AccessModifier) << ' ' << field.Type << ' '
-					   << field.Name << '\n';
+					   << field.Name;
+					if (field.InitialString != xenon::NoString &&
+						field.InitialString < module.Strings.size())
+					{
+						os << " = \"" << escape(module.Strings[field.InitialString]) << '"';
+					}
+					else if (!std::holds_alternative<Null>(field.InitialValue))
+					{
+						os << " = " << formatValue(field.InitialValue);
+					}
+					os << '\n';
 				}
 
 				for (const auto& enumerator : type.Enumerators)
@@ -331,6 +341,16 @@ namespace xenon
 				writeAttributes(global.Attributes, os, 1);
 				writeTemplates(global.TemplateParams, os, 1);
 				writeIndent(os, 1);
+				const auto initial = [&module, &global]() -> std::string
+				{
+					if (global.InitialString != xenon::NoString &&
+						global.InitialString < module.Strings.size())
+					{
+						return "\"" + escape(module.Strings[global.InitialString]) + "\"";
+					}
+					return formatValue(global.InitialValue);
+				};
+
 				if (global.Constant)
 				{
 					os << ".constant";
@@ -338,7 +358,7 @@ namespace xenon
 					{
 						os << " export";
 					}
-					os << ' ' << global.Type << ' ' << global.Name << ' ' << formatValue(global.InitialValue) << '\n';
+					os << ' ' << global.Type << ' ' << global.Name << ' ' << initial() << '\n';
 				}
 				else
 				{
@@ -348,9 +368,10 @@ namespace xenon
 						os << " export";
 					}
 					os << ' ' << global.Type << ' ' << global.Name;
-					if (!std::holds_alternative<Null>(global.InitialValue))
+					if (global.InitialString != xenon::NoString ||
+						!std::holds_alternative<Null>(global.InitialValue))
 					{
-						os << ' ' << formatValue(global.InitialValue);
+						os << ' ' << initial();
 					}
 					os << '\n';
 				}

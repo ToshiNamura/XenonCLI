@@ -245,9 +245,10 @@ namespace xenon
 
 	struct FieldDecl
 	{
-		std::string Type;
-		std::string Name;
-		bool        Constant = false;
+		std::string           Type;
+		std::string           Name;
+		bool                  Constant = false;
+		std::unique_ptr<Expr> Init; ///< Initializer; may be null.
 	};
 
 	struct TypeDecl

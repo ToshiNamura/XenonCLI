@@ -1003,6 +1003,89 @@ double main()
 	check(number != nullptr && std::abs(*number - 1.0) < 1e-12, "exported call result wrong");
 }
 
+void testInitializers()
+{
+	const std::string source = R"(
+export module Init;
+
+string greeting = "hello";
+double limit = 2.5;
+
+struct Config
+{
+	const double radius = 2.0;
+	double width = 3.0;
+	string label = "default";
+	bool enabled = true;
+	double scaled = 2.0 * 1.5;
+};
+
+Config make()
+{
+	return new Config();
+}
+
+string greet()
+{
+	return greeting;
+}
+
+double main()
+{
+	Config c = make();
+	return c.radius + c.width + c.scaled + limit;
+}
+)";
+
+	const auto module = compileOrFail(source, "initializers");
+
+	xenon::Runtime runtime;
+	runtime.addModule(module);
+
+	check(runtime.run("main") == xenon::InterpretResult::Ok, "run('main') failed");
+	const auto* number = std::get_if<double>(&runtime.lastValue());
+	check(number != nullptr && std::abs(*number - 10.5) < 1e-12, "initializer result wrong");
+
+	check(runtime.run("greet") == xenon::InterpretResult::Ok, "run('greet') failed");
+	const auto* text = std::get_if<xenon::Ref>(&runtime.lastValue());
+	check(text != nullptr && runtime.stringValue(*text) == "hello", "string global initializer wrong");
+
+	check(runtime.run("make") == xenon::InterpretResult::Ok, "run('make') failed");
+	const auto* config = std::get_if<xenon::Ref>(&runtime.lastValue());
+	check(config != nullptr, "make() did not return an object");
+	if (config != nullptr)
+	{
+		const xenon::Value widthValue = runtime.getField(*config, "width");
+		const auto*       width      = std::get_if<double>(&widthValue);
+		check(width != nullptr && std::abs(*width - 3.0) < 1e-12, "numeric field initializer wrong");
+
+		const xenon::Value labelValue = runtime.getField(*config, "label");
+		const auto*       label      = std::get_if<xenon::Ref>(&labelValue);
+		check(label != nullptr && runtime.stringValue(*label) == "default",
+			  "string field initializer wrong");
+
+		const xenon::Value enabledValue = runtime.getField(*config, "enabled");
+		const auto*       enabled      = std::get_if<bool>(&enabledValue);
+		check(enabled != nullptr && *enabled, "bool field initializer wrong");
+	}
+
+	check(compileFails(R"(
+export module BadFieldInit;
+
+struct Config
+{
+	double width = "text";
+};
+
+double main()
+{
+	Config c = new Config();
+	return c.width;
+}
+)", "cannot initialize the field"),
+		  "a mismatched field initializer should fail");
+}
+
 void testParseError()
 {
 	const std::string source = R"(
@@ -1043,6 +1126,7 @@ int main()
 		testConstChecking();
 		testEnumValues();
 		testExportedVisibility();
+		testInitializers();
 		testParseError();
 	}
 	catch (const std::exception& error)
