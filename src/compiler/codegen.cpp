@@ -659,7 +659,7 @@ namespace xenon
 	{
 		if (const auto* e = dynamic_cast<const xenon::ExprStmt*>(&stmt))
 		{
-			compileExpression(*e->Expr);
+			compileExpression(*e->Expression);
 			emitOpcode(Instruction::Pop);
 		}
 		else if (const auto* v = dynamic_cast<const xenon::VarDeclStmt*>(&stmt))

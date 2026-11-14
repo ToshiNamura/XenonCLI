@@ -115,7 +115,7 @@ namespace xenon
 
 	struct ExprStmt : Stmt
 	{
-		std::unique_ptr<Expr> Expr;
+		std::unique_ptr<Expr> Expression;
 	};
 
 	struct VarDeclStmt : Stmt
