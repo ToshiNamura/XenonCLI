@@ -40,6 +40,13 @@ namespace xenon
 
 		const Token& consume(TokenType type, const std::string& message);
 
+		/// True when the current token can close a template argument list
+		/// (`>` or the first half of `>>`).
+		bool checkGreater() const;
+
+		/// Consumes one `>`, splitting a `>>` token when template arguments nest.
+		void consumeGreater(const std::string& message);
+
 		bool checkKeyword(std::string_view keyword) const;
 
 		bool matchKeyword(std::string_view keyword);
@@ -76,13 +83,23 @@ namespace xenon
 
 		std::unique_ptr<Expr> parseAssignment();
 
+		std::unique_ptr<Expr> parseTernary();
+
 		std::unique_ptr<Expr> parseOr();
 
 		std::unique_ptr<Expr> parseAnd();
 
+		std::unique_ptr<Expr> parseBitOr();
+
+		std::unique_ptr<Expr> parseBitXor();
+
+		std::unique_ptr<Expr> parseBitAnd();
+
 		std::unique_ptr<Expr> parseEquality();
 
 		std::unique_ptr<Expr> parseComparison();
+
+		std::unique_ptr<Expr> parseShift();
 
 		std::unique_ptr<Expr> parseTerm();
 

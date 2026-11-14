@@ -173,7 +173,7 @@ xenon::TemplateDecl xenon::Parser::parseTemplate()
 	advance(); // consume 'template'
 	consume(xenon::TokenType::Less, "expected '<' after 'template'");
 
-	if (!check(xenon::TokenType::Greater))
+	if (!checkGreater())
 	{
 		do
 		{
@@ -184,7 +184,7 @@ xenon::TemplateDecl xenon::Parser::parseTemplate()
 			templ.Params.push_back(std::string(consume(xenon::TokenType::Identifier, "expected a template parameter name").Lexeme));
 		} while (match(xenon::TokenType::Comma));
 	}
-	consume(xenon::TokenType::Greater, "expected '>' after template parameters");
+	consumeGreater("expected '>' after template parameters");
 
 	if (checkKeyword("enum"))
 	{
@@ -368,7 +368,7 @@ std::string xenon::Parser::parseType()
 		{
 			type += parseType();
 		} while (match(xenon::TokenType::Comma));
-		consume(xenon::TokenType::Greater, "expected '>' after template arguments");
+		consumeGreater("expected '>' after template arguments");
 		type += '>';
 	}
 
@@ -605,28 +605,77 @@ std::unique_ptr<xenon::Expr> xenon::Parser::parseExpression()
 
 std::unique_ptr<xenon::Expr> xenon::Parser::parseAssignment()
 {
-	auto expr = parseOr();
+	auto expr = parseTernary();
 
-	if (match(xenon::TokenType::Assign))
+	xenon::CompoundOp operation = xenon::CompoundOp::Add;
+	bool              compound  = false;
+
+	switch (_current.Type)
 	{
+		case xenon::TokenType::PlusAssign:      operation = xenon::CompoundOp::Add;      compound = true; break;
+		case xenon::TokenType::MinusAssign:     operation = xenon::CompoundOp::Subtract; compound = true; break;
+		case xenon::TokenType::StarAssign:      operation = xenon::CompoundOp::Multiply; compound = true; break;
+		case xenon::TokenType::SlashAssign:     operation = xenon::CompoundOp::Divide;   compound = true; break;
+		case xenon::TokenType::PercentAssign:   operation = xenon::CompoundOp::Modulo;   compound = true; break;
+		case xenon::TokenType::AmpAssign:       operation = xenon::CompoundOp::BitAnd;   compound = true; break;
+		case xenon::TokenType::PipeAssign:      operation = xenon::CompoundOp::BitOr;    compound = true; break;
+		case xenon::TokenType::CaretAssign:     operation = xenon::CompoundOp::BitXor;   compound = true; break;
+		case xenon::TokenType::ShiftLeftAssign: operation = xenon::CompoundOp::ShiftLeft;  compound = true; break;
+		case xenon::TokenType::ShiftRightAssign: operation = xenon::CompoundOp::ShiftRight; compound = true; break;
+		default:
+			break;
+	}
+
+	if (compound)
+	{
+		advance(); // consume the compound assignment operator
+	}
+	else if (!match(xenon::TokenType::Assign))
+	{
+		return expr;
+	}
+
+	{
+		const int line = _previous.Line;
+
 		if (auto* variable = dynamic_cast<xenon::VariableExpr*>(expr.get()))
 		{
-			auto assign   = std::make_unique<xenon::AssignExpr>();
-			assign->Line  = _previous.Line;
-			assign->Name  = std::move(variable->Name);
-			assign->Value = parseAssignment();
+			auto assign      = std::make_unique<xenon::AssignExpr>();
+			assign->Line     = line;
+			assign->Name     = std::move(variable->Name);
+			assign->Compound = compound;
+			assign->Operation = operation;
+			assign->Value    = parseAssignment();
 			return assign;
 		}
 		if (auto* field = dynamic_cast<xenon::FieldAccessExpr*>(expr.get()))
 		{
-			auto assign       = std::make_unique<xenon::FieldAssignExpr>();
-			assign->Line      = _previous.Line;
-			assign->Object    = std::move(field->Object);
-			assign->FieldName = std::move(field->FieldName);
-			assign->Value     = parseAssignment();
+			auto assign        = std::make_unique<xenon::FieldAssignExpr>();
+			assign->Line       = line;
+			assign->Object     = std::move(field->Object);
+			assign->FieldName  = std::move(field->FieldName);
+			assign->Compound   = compound;
+			assign->Operation  = operation;
+			assign->Value      = parseAssignment();
 			return assign;
 		}
 		fail("invalid assignment target");
+	}
+}
+
+std::unique_ptr<xenon::Expr> xenon::Parser::parseTernary()
+{
+	auto expr = parseOr();
+
+	if (match(xenon::TokenType::Question))
+	{
+		auto ternary       = std::make_unique<xenon::TernaryExpr>();
+		ternary->Line      = _previous.Line;
+		ternary->Condition = std::move(expr);
+		ternary->Then      = parseAssignment();
+		consume(xenon::TokenType::Colon, "expected ':' in the ternary operator");
+		ternary->Else      = parseAssignment();
+		return ternary;
 	}
 
 	return expr;
@@ -651,12 +700,63 @@ std::unique_ptr<xenon::Expr> xenon::Parser::parseOr()
 
 std::unique_ptr<xenon::Expr> xenon::Parser::parseAnd()
 {
-	auto expr = parseEquality();
+	auto expr = parseBitOr();
 
 	while (match(xenon::TokenType::AndAnd))
 	{
 		auto binary       = std::make_unique<xenon::BinaryExpr>();
 		binary->Operation = xenon::BinaryExpr::Op::And;
+		binary->Left      = std::move(expr);
+		binary->Right     = parseBitOr();
+		binary->Line      = binary->Right->Line;
+		expr = std::move(binary);
+	}
+
+	return expr;
+}
+
+std::unique_ptr<xenon::Expr> xenon::Parser::parseBitOr()
+{
+	auto expr = parseBitXor();
+
+	while (match(xenon::TokenType::Pipe))
+	{
+		auto binary       = std::make_unique<xenon::BinaryExpr>();
+		binary->Operation = xenon::BinaryExpr::Op::BitOr;
+		binary->Left      = std::move(expr);
+		binary->Right     = parseBitXor();
+		binary->Line      = binary->Right->Line;
+		expr = std::move(binary);
+	}
+
+	return expr;
+}
+
+std::unique_ptr<xenon::Expr> xenon::Parser::parseBitXor()
+{
+	auto expr = parseBitAnd();
+
+	while (match(xenon::TokenType::Caret))
+	{
+		auto binary       = std::make_unique<xenon::BinaryExpr>();
+		binary->Operation = xenon::BinaryExpr::Op::BitXor;
+		binary->Left      = std::move(expr);
+		binary->Right     = parseBitAnd();
+		binary->Line      = binary->Right->Line;
+		expr = std::move(binary);
+	}
+
+	return expr;
+}
+
+std::unique_ptr<xenon::Expr> xenon::Parser::parseBitAnd()
+{
+	auto expr = parseEquality();
+
+	while (match(xenon::TokenType::Ampersand))
+	{
+		auto binary       = std::make_unique<xenon::BinaryExpr>();
+		binary->Operation = xenon::BinaryExpr::Op::BitAnd;
 		binary->Left      = std::move(expr);
 		binary->Right     = parseEquality();
 		binary->Line      = binary->Right->Line;
@@ -685,7 +785,7 @@ std::unique_ptr<xenon::Expr> xenon::Parser::parseEquality()
 
 std::unique_ptr<xenon::Expr> xenon::Parser::parseComparison()
 {
-	auto expr = parseTerm();
+	auto expr = parseShift();
 
 	while (match(xenon::TokenType::Less) || match(xenon::TokenType::LessEqual) || match(xenon::TokenType::Greater) || match(xenon::TokenType::GreaterEqual))
 	{
@@ -708,6 +808,24 @@ std::unique_ptr<xenon::Expr> xenon::Parser::parseComparison()
 
 		auto binary       = std::make_unique<xenon::BinaryExpr>();
 		binary->Operation = op;
+		binary->Left      = std::move(expr);
+		binary->Right     = parseShift();
+		binary->Line      = binary->Right->Line;
+		expr = std::move(binary);
+	}
+
+	return expr;
+}
+
+std::unique_ptr<xenon::Expr> xenon::Parser::parseShift()
+{
+	auto expr = parseTerm();
+
+	while (match(xenon::TokenType::ShiftLeft) || match(xenon::TokenType::ShiftRight))
+	{
+		auto binary       = std::make_unique<xenon::BinaryExpr>();
+		binary->Operation = _previous.Type == xenon::TokenType::ShiftLeft ? xenon::BinaryExpr::Op::ShiftLeft
+																		  : xenon::BinaryExpr::Op::ShiftRight;
 		binary->Left      = std::move(expr);
 		binary->Right     = parseTerm();
 		binary->Line      = binary->Right->Line;
@@ -738,10 +856,20 @@ std::unique_ptr<xenon::Expr> xenon::Parser::parseFactor()
 {
 	auto expr = parseUnary();
 
-	while (match(xenon::TokenType::Star) || match(xenon::TokenType::Slash))
+	while (match(xenon::TokenType::Star) || match(xenon::TokenType::Slash) || match(xenon::TokenType::Percent))
 	{
+		xenon::BinaryExpr::Op op = xenon::BinaryExpr::Op::Multiply;
+		if (_previous.Type == xenon::TokenType::Slash)
+		{
+			op = xenon::BinaryExpr::Op::Divide;
+		}
+		else if (_previous.Type == xenon::TokenType::Percent)
+		{
+			op = xenon::BinaryExpr::Op::Modulo;
+		}
+
 		auto binary       = std::make_unique<xenon::BinaryExpr>();
-		binary->Operation = _previous.Type == xenon::TokenType::Star ? xenon::BinaryExpr::Op::Multiply : xenon::BinaryExpr::Op::Divide;
+		binary->Operation = op;
 		binary->Left      = std::move(expr);
 		binary->Right     = parseUnary();
 		binary->Line      = binary->Right->Line;
@@ -774,6 +902,23 @@ std::unique_ptr<xenon::Expr> xenon::Parser::parseUnary()
 	{
 		auto unary       = std::make_unique<xenon::UnaryExpr>();
 		unary->Operation = xenon::UnaryExpr::Op::Not;
+		unary->Line      = _previous.Line;
+		unary->Operand   = parseUnary();
+		return unary;
+	}
+	if (match(xenon::TokenType::Tilde))
+	{
+		auto unary       = std::make_unique<xenon::UnaryExpr>();
+		unary->Operation = xenon::UnaryExpr::Op::BitNot;
+		unary->Line      = _previous.Line;
+		unary->Operand   = parseUnary();
+		return unary;
+	}
+	if (match(xenon::TokenType::PlusPlus) || match(xenon::TokenType::MinusMinus))
+	{
+		auto unary       = std::make_unique<xenon::UnaryExpr>();
+		unary->Operation = _previous.Type == xenon::TokenType::PlusPlus ? xenon::UnaryExpr::Op::PreIncrement
+																	   : xenon::UnaryExpr::Op::PreDecrement;
 		unary->Line      = _previous.Line;
 		unary->Operand   = parseUnary();
 		return unary;
@@ -847,13 +992,21 @@ std::unique_ptr<xenon::Expr> xenon::Parser::parseCall()
 			{
 				name += parseType();
 			} while (match(xenon::TokenType::Comma));
-			consume(xenon::TokenType::Greater, "expected '>' after template arguments");
+			consumeGreater("expected '>' after template arguments");
 			name += '>';
 
 			auto target  = std::make_unique<xenon::VariableExpr>();
 			target->Name = std::move(name);
 			target->Line = _previous.Line;
 			expr         = std::move(target);
+		}
+		else if (match(xenon::TokenType::PlusPlus) || match(xenon::TokenType::MinusMinus))
+		{
+			auto postfix      = std::make_unique<xenon::PostfixExpr>();
+			postfix->Increment = _previous.Type == xenon::TokenType::PlusPlus;
+			postfix->Line      = _previous.Line;
+			postfix->Operand   = std::move(expr);
+			expr               = std::move(postfix);
 		}
 		else
 		{
@@ -862,6 +1015,29 @@ std::unique_ptr<xenon::Expr> xenon::Parser::parseCall()
 	}
 
 	return expr;
+}
+
+bool xenon::Parser::checkGreater() const
+{
+	return _current.Type == xenon::TokenType::Greater || _current.Type == xenon::TokenType::ShiftRight;
+}
+
+void xenon::Parser::consumeGreater(const std::string& message)
+{
+	if (_current.Type == xenon::TokenType::Greater)
+	{
+		advance();
+		return;
+	}
+	if (_current.Type == xenon::TokenType::ShiftRight)
+	{
+		// Split `>>` so nested template argument lists close one level at a time.
+		_current.Type   = xenon::TokenType::Greater;
+		_current.Lexeme = _current.Lexeme.substr(0, 1);
+		_previous       = _current;
+		return;
+	}
+	fail(message);
 }
 
 std::unique_ptr<xenon::Expr> xenon::Parser::parsePrimary()

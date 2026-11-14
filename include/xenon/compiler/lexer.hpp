@@ -24,19 +24,39 @@ namespace xenon
 		Minus,
 		Star,
 		Slash,
+		Percent, // %
 		Bang,
-		Assign,       // =
-		EqualEqual,   // ==
-		BangEqual,    // !=
-		Less,         // <
-		LessEqual,    // <=
-		Greater,      // >
-		GreaterEqual, // >=
-		AndAnd,       // &&
-		OrOr,         // ||
-		Dot,          // .
-		ColonColon,   // ::
-		Colon,        // :
+		Tilde,           // ~
+		Ampersand,       // &
+		Pipe,            // |
+		Caret,           // ^
+		ShiftLeft,       // <<
+		ShiftRight,      // >>
+		Assign,          // =
+		PlusAssign,      // +=
+		MinusAssign,     // -=
+		StarAssign,      // *=
+		SlashAssign,     // /=
+		PercentAssign,   // %=
+		AmpAssign,       // &=
+		PipeAssign,      // |=
+		CaretAssign,     // ^=
+		ShiftLeftAssign, // <<=
+		ShiftRightAssign,// >>=
+		EqualEqual,      // ==
+		BangEqual,       // !=
+		Less,            // <
+		LessEqual,       // <=
+		Greater,         // >
+		GreaterEqual,    // >=
+		AndAnd,          // &&
+		OrOr,            // ||
+		PlusPlus,        // ++
+		MinusMinus,      // --
+		Question,        // ?
+		Dot,             // .
+		ColonColon,      // ::
+		Colon,           // :
 	};
 
 	struct Token

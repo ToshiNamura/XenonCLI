@@ -71,6 +71,19 @@ void testMnemonics()
 	check(std::string(xenon::mnemonic(xenon::Directive::Class)) == ".class", "mnemonic(.class)");
 	check(std::string(xenon::mnemonic(xenon::Directive::Item)) == ".item", "mnemonic(.item)");
 	check(std::string(xenon::mnemonic(xenon::Directive::Locals)) == ".locals", "mnemonic(.locals)");
+	check(std::string(xenon::mnemonic(xenon::Instruction::Mod)) == "mod", "mnemonic(mod)");
+	check(std::string(xenon::mnemonic(xenon::Instruction::BAnd)) == "and", "mnemonic(and)");
+	check(std::string(xenon::mnemonic(xenon::Instruction::BOr)) == "or", "mnemonic(or)");
+	check(std::string(xenon::mnemonic(xenon::Instruction::BXor)) == "xor", "mnemonic(xor)");
+	check(std::string(xenon::mnemonic(xenon::Instruction::BNot)) == "bnot", "mnemonic(bnot)");
+	check(std::string(xenon::mnemonic(xenon::Instruction::Shl)) == "shl", "mnemonic(shl)");
+	check(std::string(xenon::mnemonic(xenon::Instruction::Shr)) == "shr", "mnemonic(shr)");
+
+	xenon::Instruction parsed = xenon::Instruction::Add;
+	check(xenon::instructionFromMnemonic("shr", parsed) && parsed == xenon::Instruction::Shr,
+		  "instructionFromMnemonic(shr)");
+	check(xenon::instructionFromMnemonic("mod", parsed) && parsed == xenon::Instruction::Mod,
+		  "instructionFromMnemonic(mod)");
 }
 
 void testOpcodeRanges()
@@ -89,6 +102,13 @@ void testOperandSizes()
 	check(xenon::operandSize(xenon::Instruction::Jmp) == 2, "jmp has an i16 operand");
 	check(xenon::operandSize(xenon::Instruction::Jmpa) == 4, "jmpa has a u32 operand");
 	check(xenon::operandSize(xenon::Instruction::Add) == 0, "add has no operand");
+	check(xenon::operandSize(xenon::Instruction::Mod) == 0, "mod has no operand");
+	check(xenon::operandSize(xenon::Instruction::BAnd) == 0, "and has no operand");
+	check(xenon::operandSize(xenon::Instruction::BOr) == 0, "or has no operand");
+	check(xenon::operandSize(xenon::Instruction::BXor) == 0, "xor has no operand");
+	check(xenon::operandSize(xenon::Instruction::BNot) == 0, "bnot has no operand");
+	check(xenon::operandSize(xenon::Instruction::Shl) == 0, "shl has no operand");
+	check(xenon::operandSize(xenon::Instruction::Shr) == 0, "shr has no operand");
 }
 
 void testModel()
@@ -188,6 +208,48 @@ void testAssembledRun()
 	check(number != nullptr && *number == 0.0, "assembled main() result wrong");
 }
 
+void testArithmeticBodies()
+{
+	const std::string source = R"(
+.meta
+    .module Operators
+.end
+
+.text
+    .function double main()
+        const 7.0
+        const 4.0
+        mod
+        const 3.0
+        and
+        const 8.0
+        or
+        const 1.0
+        xor
+        bnot
+        const 1.0
+        shl
+        const 2.0
+        shr
+        ret
+    .end
+.end
+)";
+
+	xenon::Module    module;
+	xenon::Assembler assembler;
+	check(assembler.assemble(source, module), std::string("assemble failed: ") + assembler.lastError());
+	check(module.Functions.front().Body.code().size() == 29, "arithmetic body size");
+
+	xenon::Runtime runtime;
+	runtime.addModule(module);
+	check(runtime.run("main") == xenon::InterpretResult::Ok, "run('main') failed");
+
+	// 7 mod 4 = 3; 3 and 3 = 3; 3 or 8 = 11; 11 xor 1 = 10; ~10 = -11; -11 << 1 = -22; -22 >> 2 = -6
+	const auto* number = std::get_if<double>(&runtime.lastValue());
+	check(number != nullptr && *number == -6.0, "arithmetic instruction result wrong");
+}
+
 void testDisassembler()
 {
 	xenon::Module    module;
@@ -223,6 +285,7 @@ int main()
 		testAssembler();
 		testAssemblerErrors();
 		testAssembledRun();
+		testArithmeticBodies();
 		testDisassembler();
 	}
 	catch (const std::exception& error)

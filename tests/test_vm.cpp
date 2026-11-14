@@ -136,6 +136,86 @@ void testRelativeJump()
 	check(number != nullptr && *number == 7.0, "relative jump landed on the wrong instruction");
 }
 
+xenon::XenonBinary makeBinary(xenon::Instruction op, double left, double right)
+{
+	xenon::XenonBinary binary;
+	const auto a = binary.addConstant(left);
+	const auto b = binary.addConstant(right);
+	binary.write(xenon::Instruction::Const, 1);
+	writeU16(binary, a);
+	binary.write(xenon::Instruction::Const, 1);
+	writeU16(binary, b);
+	binary.write(op, 1);
+	binary.write(xenon::Instruction::Ret, 1);
+	return binary;
+}
+
+void testModuloAndBitwise()
+{
+	xenon::VirtualMachine vm;
+	xenon::VirtualStack   stack;
+
+	check(vm.interpret(makeBinary(xenon::Instruction::Mod, 7.0, 4.0), stack) ==
+			  xenon::InterpretResult::Ok,
+		  "mod failed");
+	const auto* modulo = std::get_if<double>(&vm.lastValue());
+	check(modulo != nullptr && *modulo == 3.0, "7 mod 4 should be 3");
+
+	check(vm.interpret(makeBinary(xenon::Instruction::BAnd, 12.0, 10.0), stack) ==
+			  xenon::InterpretResult::Ok,
+		  "and failed");
+	const auto* bitAnd = std::get_if<double>(&vm.lastValue());
+	check(bitAnd != nullptr && *bitAnd == 8.0, "12 and 10 should be 8");
+
+	check(vm.interpret(makeBinary(xenon::Instruction::BOr, 12.0, 10.0), stack) ==
+			  xenon::InterpretResult::Ok,
+		  "or failed");
+	const auto* bitOr = std::get_if<double>(&vm.lastValue());
+	check(bitOr != nullptr && *bitOr == 14.0, "12 or 10 should be 14");
+
+	check(vm.interpret(makeBinary(xenon::Instruction::BXor, 12.0, 10.0), stack) ==
+			  xenon::InterpretResult::Ok,
+		  "xor failed");
+	const auto* bitXor = std::get_if<double>(&vm.lastValue());
+	check(bitXor != nullptr && *bitXor == 6.0, "12 xor 10 should be 6");
+
+	check(vm.interpret(makeBinary(xenon::Instruction::Shl, 3.0, 4.0), stack) ==
+			  xenon::InterpretResult::Ok,
+		  "shl failed");
+	const auto* shiftLeft = std::get_if<double>(&vm.lastValue());
+	check(shiftLeft != nullptr && *shiftLeft == 48.0, "3 shl 4 should be 48");
+
+	check(vm.interpret(makeBinary(xenon::Instruction::Shr, 48.0, 4.0), stack) ==
+			  xenon::InterpretResult::Ok,
+		  "shr failed");
+	const auto* shiftRight = std::get_if<double>(&vm.lastValue());
+	check(shiftRight != nullptr && *shiftRight == 3.0, "48 shr 4 should be 3");
+}
+
+void testBitwiseFaults()
+{
+	xenon::VirtualMachine vm;
+	xenon::VirtualStack   stack;
+
+	const auto expectThrow = [&vm, &stack](xenon::XenonBinary binary, const std::string& what)
+	{
+		bool threw = false;
+		try
+		{
+			(void)vm.interpret(binary, stack);
+		}
+		catch (const xenon::RuntimeError&)
+		{
+			threw = true;
+		}
+		check(threw, what + " did not throw RuntimeError");
+	};
+
+	expectThrow(makeBinary(xenon::Instruction::Mod, 7.0, 0.0), "modulo by zero");
+	expectThrow(makeBinary(xenon::Instruction::Shl, 1.0, 64.0), "shift amount 64");
+	expectThrow(makeBinary(xenon::Instruction::Shr, 1.0, -1.0), "negative shift amount");
+}
+
 int main()
 {
 	try
@@ -144,6 +224,8 @@ int main()
 		testDivisionByZero();
 		testWideConstantPool();
 		testRelativeJump();
+		testModuloAndBitwise();
+		testBitwiseFaults();
 	}
 	catch (const std::exception& error)
 	{
