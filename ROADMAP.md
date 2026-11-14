@@ -74,3 +74,19 @@
 - [ ] Оптимизации VM: computed goto, inline caching, constant folding.
 - [ ] Формальная спецификация языка в `docs/language.md`.
 - [ ] Бенчмарки VM и компилятора.
+
+## Трекер
+
+Невыполненные пункты заведены в GitHub Issues и разложены по milestones:
+
+| Этап | Milestone | Issues |
+| --- | --- | --- |
+| 1. Язык и компилятор | `v0.3.0 — Language completeness` | [#1](https://github.com/ToshiNamura/XenonCLI/issues/1) – [#6](https://github.com/ToshiNamura/XenonCLI/issues/6), [#8](https://github.com/ToshiNamura/XenonCLI/issues/8) – [#12](https://github.com/ToshiNamura/XenonCLI/issues/12) |
+| 2. Байт-код и VM | `v0.4.0 — VM and runtime` | [#13](https://github.com/ToshiNamura/XenonCLI/issues/13) – [#16](https://github.com/ToshiNamura/XenonCLI/issues/16) |
+| 3. Среда выполнения | `v0.4.0 — VM and runtime` | [#17](https://github.com/ToshiNamura/XenonCLI/issues/17), [#18](https://github.com/ToshiNamura/XenonCLI/issues/18) |
+| 4. Упаковщик и CLI | `v0.5.0 — Tooling and packaging` | [#19](https://github.com/ToshiNamura/XenonCLI/issues/19), [#20](https://github.com/ToshiNamura/XenonCLI/issues/20) |
+| 5. Качество | `v0.5.0 — Tooling and packaging` | [#21](https://github.com/ToshiNamura/XenonCLI/issues/21), [#22](https://github.com/ToshiNamura/XenonCLI/issues/22) |
+
+Завершённая архитектурная переработка — milestone
+`v0.2.0 — Unified Xenon ASM` и PR
+[#7](https://github.com/ToshiNamura/XenonCLI/pull/7).
