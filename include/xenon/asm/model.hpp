@@ -97,6 +97,7 @@ namespace xenon
 	{
 		std::string                     Name;
 		std::string                     Signature;
+		std::vector<std::string>        Params; ///< Parameter types, in order.
 		bool                            Exported = false;
 		std::size_t                     Arity    = 0;
 		std::size_t                     Locals   = 0;
@@ -113,6 +114,7 @@ namespace xenon
 		std::string                     Name;
 		Access                          AccessModifier = Access::Private; ///< Public by default in a struct.
 		bool                            Exported       = false;
+		bool                            Constant       = false;
 		AttributeList                   Attributes;
 		std::vector<TemplateParam>      TemplateParams;
 	};
@@ -122,6 +124,7 @@ namespace xenon
 	{
 		std::string                     Name;
 		std::string                     Signature;
+		std::vector<std::string>        Params; ///< Parameter types, in order.
 		Access                          AccessModifier = Access::Private;
 		bool                            Exported       = false;
 		std::size_t                     Arity          = 0;

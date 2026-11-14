@@ -92,35 +92,78 @@ namespace xenon
 		for (const auto& decl : _program.TypeDecls)
 		{
 			std::vector<std::string> fieldNames;
+			std::vector<std::string> fieldTypes;
+			std::unordered_set<std::string> constFields;
 			for (const auto& field : decl.Fields)
 			{
 				fieldNames.push_back(field.Name);
+				fieldTypes.push_back(field.Type);
+				if (field.Constant)
+				{
+					constFields.insert(field.Name);
+				}
 			}
-			_typeFields[decl.Name] = std::move(fieldNames);
+			_typeFields[decl.Name]     = std::move(fieldNames);
+			_typeFieldTypes[decl.Name] = std::move(fieldTypes);
+			if (!constFields.empty())
+			{
+				_constFields[decl.Name] = std::move(constFields);
+			}
 
 			for (const auto& method : decl.Methods)
 			{
-				_methods.insert(decl.Name + "::" + method.Name);
+				const std::string qualified = decl.Name + "::" + method.Name;
+				_methods.insert(qualified);
+				registerSignature(qualified, method);
+			}
+		}
+
+		for (const auto& function : _program.Functions)
+		{
+			registerSignature(function.Name, function);
+		}
+
+		for (const auto& global : _program.Globals)
+		{
+			_globalTypes[global.Name] = global.Type;
+			if (global.Constant)
+			{
+				_constGlobals.insert(global.Name);
 			}
 		}
 
 		for (const auto& function : _hints.Functions)
 		{
 			_functions.insert(function.Name);
+			registerSignature(function.Name, function.Params, function.Signature);
 		}
 
 		for (const auto& type : _hints.Types)
 		{
 			std::vector<std::string> fieldNames;
+			std::vector<std::string> fieldTypes;
+			std::unordered_set<std::string> constFields;
 			for (const auto& field : type.Fields)
 			{
 				fieldNames.push_back(field.Name);
+				fieldTypes.push_back(field.Type);
+				if (field.Constant)
+				{
+					constFields.insert(field.Name);
+				}
 			}
-			_typeFields[type.Name] = std::move(fieldNames);
+			_typeFields[type.Name]     = std::move(fieldNames);
+			_typeFieldTypes[type.Name] = std::move(fieldTypes);
+			if (!constFields.empty())
+			{
+				_constFields[type.Name] = std::move(constFields);
+			}
 
 			for (const auto& method : type.Methods)
 			{
-				_methods.insert(type.Name + "::" + method.Name);
+				const std::string qualified = type.Name + "::" + method.Name;
+				_methods.insert(qualified);
+				registerSignature(qualified, method.Params, method.Signature);
 			}
 		}
 
@@ -143,13 +186,83 @@ namespace xenon
 		for (const auto& global : _hints.Globals)
 		{
 			_globals.insert(global.Name);
+			_globalTypes[global.Name] = global.Type;
+			if (global.Constant)
+			{
+				_constGlobals.insert(global.Name);
+			}
 		}
+	}
+
+	void xenon::CodeGenerator::registerSignature(const std::string& name, const std::vector<std::string>& params,
+												 const std::string& signature)
+	{
+		_functionParams[name] = params;
+
+		std::string returnType = "void";
+		const auto  space      = signature.find(' ');
+		if (space != std::string::npos && signature.compare(0, space, "void") != 0)
+		{
+			returnType = signature.substr(0, space);
+		}
+		_functionReturns[name] = std::move(returnType);
+	}
+
+	void xenon::CodeGenerator::registerSignature(const std::string& name, const xenon::FunctionDecl& function)
+	{
+		std::vector<std::string> params;
+		params.reserve(function.Params.size());
+		for (const auto& param : function.Params)
+		{
+			params.push_back(param.first);
+		}
+		_functionParams[name] = std::move(params);
+		_functionReturns[name] = function.ReturnType.empty() ? "void" : function.ReturnType;
 	}
 
 	[[noreturn]] void xenon::CodeGenerator::fail(const std::string& message)
 	{
 		_error = message;
 		throw CodeGenError{};
+	}
+
+	[[noreturn]] void xenon::CodeGenerator::fail(const std::string& message, int line)
+	{
+		_error = line > 0 ? message + " (line " + std::to_string(line) + ")" : message;
+		throw CodeGenError{};
+	}
+
+	std::string xenon::CodeGenerator::baseType(const std::string& name)
+	{
+		const auto less = name.find('<');
+		return less == std::string::npos ? name : name.substr(0, less);
+	}
+
+	bool xenon::CodeGenerator::isAssignable(const std::string& target, const std::string& value)
+	{
+		if (target.empty() || value.empty() || target == "any" || value == "any")
+		{
+			return true; // type could not be inferred
+		}
+		if (target == value || baseType(target) == baseType(value))
+		{
+			return true;
+		}
+
+		const auto numeric = [](const std::string& type)
+		{
+			return type == "double" || type == "int" || type == "float" || type == "long";
+		};
+
+		if (numeric(target) && numeric(value))
+		{
+			return true;
+		}
+		if (value == "null")
+		{
+			return !numeric(target) && target != "bool";
+		}
+		return false;
 	}
 
 	bool xenon::CodeGenerator::generate(xenon::Module& out)
@@ -258,6 +371,11 @@ namespace xenon
 		compiled.Exported  = function.Exported;
 		compiled.Arity     = function.Params.size();
 		compiled.Defined   = function.HasBody;
+		for (const auto& param : function.Params)
+		{
+			compiled.Params.push_back(substituteType(param.first));
+		}
+		registerSignature(name, compiled.Params, compiled.Signature);
 
 		if (!function.HasBody)
 		{
@@ -271,11 +389,17 @@ namespace xenon
 		_maxSlots    = 0;
 
 		enterScope();
-		for (const auto& param : function.Params)
+		for (std::size_t i = 0; i < function.Params.size(); ++i)
 		{
-			declareLocal(param.second, param.first);
+			const bool constant = i < function.ParamConstants.size() && function.ParamConstants[i];
+			declareLocal(function.Params[i].second, function.Params[i].first, constant);
 		}
+
+		_currentReturnType   = function.ReturnType.empty() ? "void" : function.ReturnType;
+		_currentFunctionName = name;
 		compileBlock(*function.Body);
+		_currentReturnType.clear();
+		_currentFunctionName.clear();
 
 		emitConstant(Null{});
 		emitOpcode(Instruction::Ret);
@@ -293,6 +417,11 @@ namespace xenon
 		compiled.AccessModifier = Access::Public;
 		compiled.Arity          = method.Params.size();
 		compiled.Defined        = method.HasBody;
+		for (const auto& param : method.Params)
+		{
+			compiled.Params.push_back(substituteType(param.first));
+		}
+		registerSignature(type.Name + "::" + method.Name, compiled.Params, compiled.Signature);
 
 		if (!method.HasBody)
 		{
@@ -306,11 +435,17 @@ namespace xenon
 		_maxSlots    = 0;
 
 		enterScope();
-		for (const auto& param : method.Params)
+		for (std::size_t i = 0; i < method.Params.size(); ++i)
 		{
-			declareLocal(param.second, param.first);
+			const bool constant = i < method.ParamConstants.size() && method.ParamConstants[i];
+			declareLocal(method.Params[i].second, method.Params[i].first, constant);
 		}
+
+		_currentReturnType   = method.ReturnType.empty() ? "void" : method.ReturnType;
+		_currentFunctionName = type.Name + "::" + method.Name;
 		compileBlock(*method.Body);
+		_currentReturnType.clear();
+		_currentFunctionName.clear();
 
 		emitConstant(Null{});
 		emitOpcode(Instruction::Ret);
@@ -339,6 +474,7 @@ namespace xenon
 				compiled.Type           = field.Type;
 				compiled.Name           = field.Name;
 				compiled.AccessModifier = decl.Kind == xenon::DeclKind::Struct ? Access::Public : Access::Private;
+				compiled.Constant       = field.Constant;
 				type.Fields.push_back(std::move(compiled));
 			}
 
@@ -370,6 +506,7 @@ namespace xenon
 				compiled.Type           = substituteType(field.Type);
 				compiled.Name           = field.Name;
 				compiled.AccessModifier = decl.Kind == xenon::DeclKind::Struct ? Access::Public : Access::Private;
+				compiled.Constant       = field.Constant;
 				type.Fields.push_back(std::move(compiled));
 			}
 
@@ -482,7 +619,7 @@ namespace xenon
 
 	void xenon::CodeGenerator::enterScope()
 	{
-		_scopes.push_back(Scope{{}, {}, _slotCounter});
+		_scopes.push_back(Scope{{}, {}, {}, _slotCounter});
 	}
 
 	void xenon::CodeGenerator::leaveScope()
@@ -491,15 +628,182 @@ namespace xenon
 		_scopes.pop_back();
 	}
 
-	void xenon::CodeGenerator::declareLocal(const std::string& name, const std::string& type)
+	void xenon::CodeGenerator::declareLocal(const std::string& name, const std::string& type, bool constant)
 	{
 		_scopes.back().Names[name] = _slotCounter;
 		if (!type.empty())
 		{
 			_scopes.back().Types[name] = substituteType(type);
 		}
+		if (constant)
+		{
+			_scopes.back().Constants.insert(name);
+		}
 		++_slotCounter;
 		_maxSlots = std::max(_maxSlots, _slotCounter);
+	}
+
+	void xenon::CodeGenerator::checkConstWrite(const std::string& name, int line)
+	{
+		for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it)
+		{
+			if (it->Names.find(name) != it->Names.end())
+			{
+				if (it->Constants.contains(name))
+				{
+					fail("cannot assign to the 'const' variable '" + name + "'", line);
+				}
+				return;
+			}
+		}
+		if (_constGlobals.contains(name))
+		{
+			fail("cannot assign to the 'const' global '" + name + "'", line);
+		}
+	}
+
+	void xenon::CodeGenerator::checkFieldConstant(const std::string& typeName, const std::string& fieldName, int line)
+	{
+		const auto isConstant = [this, &fieldName](const std::string& type)
+		{
+			const auto found = _constFields.find(type);
+			return found != _constFields.end() && found->second.contains(fieldName);
+		};
+
+		if (isConstant(typeName) || isConstant(baseType(typeName)))
+		{
+			fail("cannot assign to the 'const' field '" + typeName + "." + fieldName + "'", line);
+		}
+	}
+
+	std::string xenon::CodeGenerator::typeOf(const xenon::Expr& expr)
+	{
+		if (dynamic_cast<const xenon::NumberExpr*>(&expr) != nullptr)
+		{
+			return "double";
+		}
+		if (dynamic_cast<const xenon::BoolExpr*>(&expr) != nullptr)
+		{
+			return "bool";
+		}
+		if (dynamic_cast<const xenon::StringExpr*>(&expr) != nullptr)
+		{
+			return "string";
+		}
+		if (dynamic_cast<const xenon::NullExpr*>(&expr) != nullptr)
+		{
+			return "null";
+		}
+		if (const auto* created = dynamic_cast<const xenon::NewExpr*>(&expr))
+		{
+			return substituteType(created->TypeName);
+		}
+		if (const auto* variable = dynamic_cast<const xenon::VariableExpr*>(&expr))
+		{
+			for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it)
+			{
+				const auto found = it->Types.find(variable->Name);
+				if (found != it->Types.end())
+				{
+					return found->second;
+				}
+			}
+			const auto global = _globalTypes.find(variable->Name);
+			return global != _globalTypes.end() ? global->second : std::string{};
+		}
+		if (const auto* field = dynamic_cast<const xenon::FieldAccessExpr*>(&expr))
+		{
+			const std::string owner = typeOf(*field->Object);
+			if (owner.empty())
+			{
+				return {};
+			}
+			ensureTypeInstantiated(owner);
+			const auto fields = _typeFields.find(owner);
+			const auto types  = _typeFieldTypes.find(owner);
+			if (fields == _typeFields.end() || types == _typeFieldTypes.end())
+			{
+				return {};
+			}
+			for (std::size_t i = 0; i < fields->second.size() && i < types->second.size(); ++i)
+			{
+				if (fields->second[i] == field->FieldName)
+				{
+					return types->second[i];
+				}
+			}
+			return {};
+		}
+		if (const auto* fieldAssign = dynamic_cast<const xenon::FieldAssignExpr*>(&expr))
+		{
+			return typeOf(*fieldAssign->Value);
+		}
+		if (const auto* assign = dynamic_cast<const xenon::AssignExpr*>(&expr))
+		{
+			return typeOf(*assign->Value);
+		}
+		if (const auto* call = dynamic_cast<const xenon::CallExpr*>(&expr))
+		{
+			const auto found = _functionReturns.find(call->Callee);
+			if (found != _functionReturns.end())
+			{
+				return substituteType(found->second);
+			}
+			const auto separator = call->Callee.rfind("::");
+			if (separator != std::string::npos)
+			{
+				const auto method = _functionReturns.find(call->Callee);
+				if (method != _functionReturns.end())
+				{
+					return substituteType(method->second);
+				}
+			}
+			return {};
+		}
+		if (const auto* unary = dynamic_cast<const xenon::UnaryExpr*>(&expr))
+		{
+			return unary->Operation == xenon::UnaryExpr::Op::Not ? "bool" : "double";
+		}
+		if (dynamic_cast<const xenon::PostfixExpr*>(&expr) != nullptr)
+		{
+			return "double";
+		}
+		if (const auto* binary = dynamic_cast<const xenon::BinaryExpr*>(&expr))
+		{
+			switch (binary->Operation)
+			{
+				case xenon::BinaryExpr::Op::Equal:
+				case xenon::BinaryExpr::Op::NotEqual:
+				case xenon::BinaryExpr::Op::Less:
+				case xenon::BinaryExpr::Op::LessEqual:
+				case xenon::BinaryExpr::Op::Greater:
+				case xenon::BinaryExpr::Op::GreaterEqual:
+				case xenon::BinaryExpr::Op::And:
+				case xenon::BinaryExpr::Op::Or:
+					return "bool";
+				default:
+					return "double";
+			}
+		}
+		if (const auto* ternary = dynamic_cast<const xenon::TernaryExpr*>(&expr))
+		{
+			const std::string thenType = typeOf(*ternary->Then);
+			const std::string elseType = typeOf(*ternary->Else);
+			if (thenType == elseType)
+			{
+				return thenType;
+			}
+			if (thenType == "null")
+			{
+				return elseType;
+			}
+			if (elseType == "null")
+			{
+				return thenType;
+			}
+			return {};
+		}
+		return {};
 	}
 
 	std::size_t xenon::CodeGenerator::allocateTemp()
@@ -542,6 +846,64 @@ namespace xenon
 		}
 	}
 
+	std::string xenon::CodeGenerator::globalType(const std::string& name) const
+	{
+		const auto found = _globalTypes.find(name);
+		return found != _globalTypes.end() ? found->second : std::string{};
+	}
+
+	std::string xenon::CodeGenerator::fieldType(const std::string& typeName, const std::string& fieldName)
+	{
+		if (typeName.empty())
+		{
+			return {};
+		}
+		ensureTypeInstantiated(typeName);
+
+		const auto fields = _typeFields.find(typeName);
+		const auto types  = _typeFieldTypes.find(typeName);
+		if (fields == _typeFields.end() || types == _typeFieldTypes.end())
+		{
+			return {};
+		}
+		for (std::size_t i = 0; i < fields->second.size() && i < types->second.size(); ++i)
+		{
+			if (fields->second[i] == fieldName)
+			{
+				return types->second[i];
+			}
+		}
+		return {};
+	}
+
+	void xenon::CodeGenerator::checkCall(const xenon::CallExpr& call)
+	{
+		const auto params = _functionParams.find(call.Callee);
+		if (params == _functionParams.end())
+		{
+			return; // declaration unknown here; resolveFunction reports unknown names
+		}
+
+		if (call.Args.size() != params->second.size())
+		{
+			fail("'" + call.Callee + "' expects " + std::to_string(params->second.size()) +
+					 " argument(s), got " + std::to_string(call.Args.size()),
+				 call.Line);
+		}
+
+		for (std::size_t i = 0; i < call.Args.size(); ++i)
+		{
+			const std::string expected = substituteType(params->second[i]);
+			const std::string actual   = typeOf(*call.Args[i]);
+			if (!isAssignable(expected, actual))
+			{
+				fail("argument " + std::to_string(i + 1) + " of '" + call.Callee + "' expects " +
+						 expected + ", got " + actual,
+					 call.Args[i]->Line);
+			}
+		}
+	}
+
 	std::string xenon::CodeGenerator::localType(const std::string& name)
 	{
 		for (auto it = _scopes.rbegin(); it != _scopes.rend(); ++it)
@@ -555,21 +917,19 @@ namespace xenon
 		fail("unknown variable type for: " + name);
 	}
 
-	std::size_t xenon::CodeGenerator::resolveField(const xenon::Expr& object, const std::string& fieldName)
+	std::string xenon::CodeGenerator::objectType(const xenon::Expr& object)
 	{
-		std::string typeName;
-		if (const auto* variable = dynamic_cast<const xenon::VariableExpr*>(&object))
-		{
-			typeName = localType(variable->Name);
-		}
-		else if (const auto* created = dynamic_cast<const xenon::NewExpr*>(&object))
-		{
-			typeName = created->TypeName;
-		}
-		else
+		const std::string type = typeOf(object);
+		if (type.empty())
 		{
 			fail("cannot determine the object type for field access");
 		}
+		return type;
+	}
+
+	std::size_t xenon::CodeGenerator::resolveField(const xenon::Expr& object, const std::string& fieldName)
+	{
+		const std::string typeName = objectType(object);
 
 		ensureTypeInstantiated(typeName);
 
@@ -673,12 +1033,28 @@ namespace xenon
 
 		const xenon::TypeDecl* decl = templ->second.Decl;
 
-		std::vector<std::string> fieldNames;
+		const auto substitutions = buildSubstitutions(templ->second.Params, typeName,
+													 typeName.substr(0, less), typeName);
+
+		std::vector<std::string>        fieldNames;
+		std::vector<std::string>        fieldTypes;
+		std::unordered_set<std::string> constFields;
 		for (const auto& field : decl->Fields)
 		{
 			fieldNames.push_back(field.Name);
+			const auto replaced = substitutions.find(field.Type);
+			fieldTypes.push_back(replaced != substitutions.end() ? replaced->second : field.Type);
+			if (field.Constant)
+			{
+				constFields.insert(field.Name);
+			}
 		}
-		_typeFields[typeName] = std::move(fieldNames);
+		_typeFields[typeName]     = std::move(fieldNames);
+		_typeFieldTypes[typeName] = std::move(fieldTypes);
+		if (!constFields.empty())
+		{
+			_constFields[typeName] = std::move(constFields);
+		}
 
 		for (const auto& method : decl->Methods)
 		{
@@ -686,11 +1062,7 @@ namespace xenon
 		}
 
 		_instantiatedTypes.insert(typeName);
-		_pendingTypes.push_back(PendingType{
-			typeName,
-			decl,
-			buildSubstitutions(templ->second.Params, typeName, typeName.substr(0, less), typeName),
-		});
+		_pendingTypes.push_back(PendingType{typeName, decl, substitutions});
 	}
 
 	void xenon::CodeGenerator::compileBlock(const xenon::BlockStmt& block)
@@ -715,8 +1087,15 @@ namespace xenon
 			if (v->Init)
 			{
 				compileExpression(*v->Init);
+				const std::string valueType = typeOf(*v->Init);
+				if (!isAssignable(substituteType(v->Type), valueType))
+				{
+					fail("cannot initialize '" + v->Name + "' of type " + v->Type + " with a value of type " +
+							 valueType,
+						 v->Line);
+				}
 			}
-			declareLocal(v->Name, v->Type);
+			declareLocal(v->Name, v->Type, v->Constant);
 			if (v->Init)
 			{
 				emitOpcode(Instruction::Stl);
@@ -725,12 +1104,29 @@ namespace xenon
 		}
 		else if (const auto* r = dynamic_cast<const xenon::ReturnStmt*>(&stmt))
 		{
+			const bool voidFunction = _currentReturnType.empty() || _currentReturnType == "void";
 			if (r->Value)
 			{
+				if (voidFunction)
+				{
+					fail("'" + _currentFunctionName + "' does not return a value", r->Line);
+				}
 				compileExpression(*r->Value);
+				const std::string valueType = typeOf(*r->Value);
+				if (!isAssignable(substituteType(_currentReturnType), valueType))
+				{
+					fail("'" + _currentFunctionName + "' returns " + _currentReturnType +
+							 " but the expression has type " + valueType,
+						 r->Line);
+				}
 			}
 			else
 			{
+				if (!voidFunction)
+				{
+					fail("'" + _currentFunctionName + "' must return a value of type " + _currentReturnType,
+						 r->Line);
+				}
 				emitConstant(xenon::Null{});
 			}
 			emitOpcode(Instruction::Ret);
@@ -1004,6 +1400,15 @@ namespace xenon
 		}
 		if (const auto* fa = dynamic_cast<const xenon::FieldAssignExpr*>(&expr))
 		{
+			const std::string ownerType = objectType(*fa->Object);
+			checkFieldConstant(ownerType, fa->FieldName, fa->Line);
+			if (!isAssignable(fieldType(ownerType, fa->FieldName), typeOf(*fa->Value)))
+			{
+				fail("cannot assign a value of type " + typeOf(*fa->Value) + " to the field '" +
+						 fa->FieldName + "' of type " + fieldType(ownerType, fa->FieldName),
+					 fa->Line);
+			}
+
 			if (fa->Compound)
 			{
 				compileFieldCompoundAssignment(*fa);
@@ -1063,6 +1468,14 @@ namespace xenon
 		}
 		if (const auto* ternary = dynamic_cast<const xenon::TernaryExpr*>(&expr))
 		{
+			const std::string thenType = typeOf(*ternary->Then);
+			const std::string elseType = typeOf(*ternary->Else);
+			if (!isAssignable(thenType, elseType) && !isAssignable(elseType, thenType))
+			{
+				fail("the branches of '?:' have incompatible types " + thenType + " and " + elseType,
+					 ternary->Line);
+			}
+
 			compileExpression(*ternary->Condition);
 			const auto elseJump = emitJump(Instruction::Jif);
 			compileExpression(*ternary->Then);
@@ -1074,6 +1487,16 @@ namespace xenon
 		}
 		if (const auto* a = dynamic_cast<const xenon::AssignExpr*>(&expr))
 		{
+			checkConstWrite(a->Name, a->Line);
+			const std::string targetType = substituteType(hasLocal(a->Name) ? localType(a->Name)
+																		   : globalType(a->Name));
+			if (!isAssignable(targetType, typeOf(*a->Value)))
+			{
+				fail("cannot assign a value of type " + typeOf(*a->Value) + " to '" + a->Name +
+						 "' of type " + targetType,
+					 a->Line);
+			}
+
 			if (a->Compound)
 			{
 				compileCompoundAssignment(a->Name, *a->Value, a->Operation);
@@ -1098,6 +1521,7 @@ namespace xenon
 		}
 		if (const auto* c = dynamic_cast<const xenon::CallExpr*>(&expr))
 		{
+			checkCall(*c);
 			for (const auto& arg : c->Args)
 			{
 				compileExpression(*arg);
@@ -1229,6 +1653,7 @@ namespace xenon
 
 		if (const auto* variable = dynamic_cast<const xenon::VariableExpr*>(&target))
 		{
+			checkConstWrite(variable->Name, target.Line);
 			if (hasLocal(variable->Name))
 			{
 				const auto slot = resolveLocal(variable->Name);
@@ -1270,6 +1695,7 @@ namespace xenon
 
 		if (const auto* field = dynamic_cast<const xenon::FieldAccessExpr*>(&target))
 		{
+			checkFieldConstant(objectType(*field->Object), field->FieldName, target.Line);
 			const auto fieldIndex = resolveField(*field->Object, field->FieldName);
 			const auto objectSlot = allocateTemp();
 			const auto valueSlot  = allocateTemp();

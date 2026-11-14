@@ -17,7 +17,7 @@ namespace xenon
 	namespace
 	{
 		constexpr char          Magic[4] = {'X', 'E', 'N', 'M'};
-		constexpr std::uint32_t Version  = 5;
+		constexpr std::uint32_t Version  = 6;
 		constexpr std::uint32_t MaxCount = 1u << 22;
 
 		void checkCount(std::uint32_t count)
@@ -169,10 +169,20 @@ namespace xenon
 			}
 		}
 
+		void writeParamTypes(std::ostream& os, const std::vector<std::string>& params)
+		{
+			writeU32(os, static_cast<std::uint32_t>(params.size()));
+			for (const auto& param : params)
+			{
+				writeString(os, param);
+			}
+		}
+
 		void writeExecutable(std::ostream& os, const Function& function)
 		{
 			writeString(os, function.Name);
 			writeString(os, function.Signature);
+			writeParamTypes(os, function.Params);
 			os.put(function.Exported ? 1 : 0);
 			os.put(function.Defined ? 1 : 0);
 			writeU32(os, static_cast<std::uint32_t>(function.Arity));
@@ -186,6 +196,7 @@ namespace xenon
 		{
 			writeString(os, method.Name);
 			writeString(os, method.Signature);
+			writeParamTypes(os, method.Params);
 			os.put(static_cast<char>(static_cast<std::uint8_t>(method.AccessModifier)));
 			os.put(method.Exported ? 1 : 0);
 			os.put(method.Defined ? 1 : 0);
@@ -408,10 +419,22 @@ namespace xenon
 			}
 		}
 
+		void readParamTypes(std::istream& is, std::vector<std::string>& params)
+		{
+			const auto count = readU32(is);
+			checkCount(count);
+			params.reserve(count);
+			for (std::uint32_t i = 0; i < count; ++i)
+			{
+				params.emplace_back(readString(is));
+			}
+		}
+
 		void readExecutable(std::istream& is, Function& function)
 		{
 			function.Name          = readString(is);
 			function.Signature     = readString(is);
+			readParamTypes(is, function.Params);
 			const int exported     = is.get();
 			const int defined      = is.get();
 			if (exported < 0 || defined < 0)
@@ -431,6 +454,7 @@ namespace xenon
 		{
 			method.Name      = readString(is);
 			method.Signature = readString(is);
+			readParamTypes(is, method.Params);
 			const int access = is.get();
 			const int exported = is.get();
 			const int defined  = is.get();
@@ -486,6 +510,7 @@ void xenon::writeModuleFile(std::ostream& os, const Module& module)
 			writeString(os, field.Name);
 			os.put(static_cast<char>(static_cast<std::uint8_t>(field.AccessModifier)));
 			os.put(field.Exported ? 1 : 0);
+			os.put(field.Constant ? 1 : 0);
 			writeAttributes(os, field.Attributes);
 			writeTemplates(os, field.TemplateParams);
 		}
@@ -593,12 +618,15 @@ void xenon::readModuleFile(std::istream& is, Module& out)
 			field.Name      = readString(is);
 			const int access = is.get();
 			const int isExported = is.get();
-			if (access < 0 || access > static_cast<int>(Access::Public) || isExported < 0)
+			const int isConstant = is.get();
+			if (access < 0 || access > static_cast<int>(Access::Public) || isExported < 0 ||
+				isConstant < 0)
 			{
 				throw ModuleFileError("invalid field in module file");
 			}
 			field.AccessModifier = static_cast<Access>(access);
 			field.Exported       = isExported != 0;
+			field.Constant       = isConstant != 0;
 			readAttributes(is, field.Attributes);
 			readTemplates(is, field.TemplateParams);
 			type.Fields.push_back(std::move(field));

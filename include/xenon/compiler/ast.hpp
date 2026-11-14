@@ -152,6 +152,7 @@ namespace xenon
 		std::string           Type;
 		std::string           Name;
 		std::unique_ptr<Expr> Init; // may be null
+		bool                  Constant = false;
 	};
 
 	struct ReturnStmt : Stmt
@@ -213,9 +214,17 @@ namespace xenon
 		std::string                                      ReturnType;       // empty means void
 		std::string                                      Name;
 		std::vector<std::pair<std::string, std::string>> Params;           // type, name
+		std::vector<bool>                                ParamConstants;   // `const` per parameter
 		std::unique_ptr<BlockStmt>                       Body;             // null for a prototype
 		bool                                             Exported = false;
 		bool                                             HasBody = true;
+
+		/// Records the type and constness of the next parameter.
+		void addParam(std::string type, std::string name, bool constant)
+		{
+			Params.emplace_back(std::move(type), std::move(name));
+			ParamConstants.push_back(constant);
+		}
 	};
 
 	struct GlobalVarDecl
@@ -238,6 +247,7 @@ namespace xenon
 	{
 		std::string Type;
 		std::string Name;
+		bool        Constant = false;
 	};
 
 	struct TypeDecl
