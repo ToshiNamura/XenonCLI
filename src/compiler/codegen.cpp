@@ -116,6 +116,11 @@ namespace xenon
 				_methods.insert(qualified);
 				registerSignature(qualified, method);
 			}
+
+			if (decl.Kind == xenon::DeclKind::Enum)
+			{
+				registerEnumerators(decl);
+			}
 		}
 
 		for (const auto& function : _program.Functions)
@@ -165,6 +170,15 @@ namespace xenon
 				_methods.insert(qualified);
 				registerSignature(qualified, method.Params, method.Signature);
 			}
+
+			if (type.Kind == xenon::TypeKind::Enum)
+			{
+				_enumTypes.insert(type.Name);
+				for (std::size_t i = 0; i < type.Enumerators.size(); ++i)
+				{
+					_enumerators[type.Name + "::" + type.Enumerators[i]] = static_cast<double>(i);
+				}
+			}
 		}
 
 		for (const auto& templ : _program.Templates)
@@ -190,6 +204,27 @@ namespace xenon
 			if (global.Constant)
 			{
 				_constGlobals.insert(global.Name);
+			}
+		}
+	}
+
+	void xenon::CodeGenerator::registerEnumerators(const xenon::TypeDecl& decl)
+	{
+		_enumTypes.insert(decl.Name);
+		for (std::size_t i = 0; i < decl.Enumerators.size(); ++i)
+		{
+			const std::string& name = decl.Enumerators[i];
+			_enumerators[decl.Name + "::" + name] = static_cast<double>(i);
+
+			const auto existing = _shortEnumerators.find(name);
+			if (existing == _shortEnumerators.end())
+			{
+				_shortEnumerators[name] = {decl.Name, static_cast<double>(i)};
+			}
+			else if (existing->second.first != decl.Name)
+			{
+				// The same enumerator name exists in another enum: it is ambiguous unqualified.
+				_ambiguousEnumerators.insert(name);
 			}
 		}
 	}
@@ -238,7 +273,7 @@ namespace xenon
 		return less == std::string::npos ? name : name.substr(0, less);
 	}
 
-	bool xenon::CodeGenerator::isAssignable(const std::string& target, const std::string& value)
+	bool xenon::CodeGenerator::isAssignable(const std::string& target, const std::string& value) const
 	{
 		if (target.empty() || value.empty() || target == "any" || value == "any")
 		{
@@ -253,14 +288,27 @@ namespace xenon
 		{
 			return type == "double" || type == "int" || type == "float" || type == "long";
 		};
+		const auto isEnum = [this](const std::string& type)
+		{
+			return _enumTypes.contains(baseType(type));
+		};
 
 		if (numeric(target) && numeric(value))
 		{
 			return true;
 		}
+		// Enumerators are stored as numbers, so they interchange with numeric types.
+		if (isEnum(value) && (numeric(target) || isEnum(target)))
+		{
+			return true;
+		}
+		if (isEnum(target) && numeric(value))
+		{
+			return true;
+		}
 		if (value == "null")
 		{
-			return !numeric(target) && target != "bool";
+			return !numeric(target) && !isEnum(target) && target != "bool";
 		}
 		return false;
 	}
@@ -551,6 +599,20 @@ namespace xenon
 			return xenon::Null{};
 		}
 
+		if (const auto* variable = dynamic_cast<const xenon::VariableExpr*>(init))
+		{
+			const auto enumerator = _enumerators.find(variable->Name);
+			if (enumerator != _enumerators.end())
+			{
+				return xenon::Value{enumerator->second};
+			}
+			const auto shortEnumerator = _shortEnumerators.find(variable->Name);
+			if (shortEnumerator != _shortEnumerators.end())
+			{
+				return xenon::Value{shortEnumerator->second.second};
+			}
+		}
+
 		if (dynamic_cast<const xenon::StringExpr*>(init) != nullptr)
 		{
 			fail("global string variables are not supported yet");
@@ -708,8 +770,18 @@ namespace xenon
 					return found->second;
 				}
 			}
-			const auto global = _globalTypes.find(variable->Name);
-			return global != _globalTypes.end() ? global->second : std::string{};
+			if (_enumerators.contains(variable->Name))
+			{
+				const auto separator = variable->Name.rfind("::");
+				return separator == std::string::npos ? variable->Name
+													 : variable->Name.substr(0, separator);
+			}
+			const auto shortEnumerator = _shortEnumerators.find(variable->Name);
+			if (shortEnumerator != _shortEnumerators.end())
+			{
+				return shortEnumerator->second.first;
+			}
+			return globalType(variable->Name);
 		}
 		if (const auto* field = dynamic_cast<const xenon::FieldAccessExpr*>(&expr))
 		{
@@ -1427,13 +1499,35 @@ namespace xenon
 			{
 				emitOpcode(Instruction::Ldl);
 				emitU16(resolveLocal(v->Name));
+				return;
 			}
-			else
+
+			const auto enumerator = _enumerators.find(v->Name);
+			if (enumerator != _enumerators.end())
 			{
-				resolveGlobal(v->Name);
-				emitOpcode(Instruction::Ldg);
-				emitName(v->Name);
+				emitConstant(enumerator->second);
+				return;
 			}
+
+			if (_ambiguousEnumerators.contains(v->Name))
+			{
+				fail("ambiguous enumerator '" + v->Name + "'; qualify it as Type::Name", v->Line);
+			}
+			const auto shortEnumerator = _shortEnumerators.find(v->Name);
+			if (shortEnumerator != _shortEnumerators.end())
+			{
+				emitConstant(shortEnumerator->second.second);
+				return;
+			}
+
+			if (v->Name.find("::") != std::string::npos)
+			{
+				fail("unknown enumerator '" + v->Name + "'", v->Line);
+			}
+
+			resolveGlobal(v->Name);
+			emitOpcode(Instruction::Ldg);
+			emitName(v->Name);
 			return;
 		}
 		if (const auto* u = dynamic_cast<const xenon::UnaryExpr*>(&expr))

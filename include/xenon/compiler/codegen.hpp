@@ -122,7 +122,7 @@ namespace xenon
 		[[nodiscard]] std::string typeOf(const Expr& expr);
 
 		/// True when a value of type `value` may be stored in a slot of type `target`.
-		[[nodiscard]] static bool isAssignable(const std::string& target, const std::string& value);
+		[[nodiscard]] bool isAssignable(const std::string& target, const std::string& value) const;
 
 		[[nodiscard]] static std::string baseType(const std::string& name);
 
@@ -161,6 +161,8 @@ namespace xenon
 		void ensureTypeInstantiated(const std::string& typeName);
 
 		void emitType(const TypeDecl& decl, const std::string& name, Module& out);
+
+		void registerEnumerators(const TypeDecl& decl);
 
 		void registerSignature(const std::string& name, const std::vector<std::string>& params,
 							   const std::string& signature);
@@ -206,6 +208,10 @@ namespace xenon
 		std::unordered_map<std::string, std::unordered_set<std::string>> _constFields;
 		std::unordered_map<std::string, std::vector<std::string>> _functionParams;
 		std::unordered_map<std::string, std::string>              _functionReturns;
+		std::unordered_map<std::string, double>                   _enumerators; ///< `Enum::Name` → value.
+		std::unordered_map<std::string, std::pair<std::string, double>> _shortEnumerators; ///< `Name` → type and value.
+		std::unordered_set<std::string>                           _ambiguousEnumerators;
+		std::unordered_set<std::string>                           _enumTypes;
 		std::string                                               _currentReturnType = "void";
 		std::string                                               _currentFunctionName;
 		std::unordered_map<std::string, FunctionTemplate>         _functionTemplates;
