@@ -187,6 +187,13 @@ ctest --preset x64-debug
 
 Подробнее — в [docs/building.md](docs/building.md).
 
+## Разработка
+
+Процесс (ветки, коммиты, PR, метки, milestones) описан в
+[CONTRIBUTING.md](CONTRIBUTING.md); текущий backlog — в
+[ROADMAP.md](ROADMAP.md) и GitHub Issues. CI (`Windows`, `Linux`, `macOS`)
+обязателен для вливания в `main`.
+
 ## Структура
 
 ```
