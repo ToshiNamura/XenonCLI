@@ -67,6 +67,9 @@ namespace xenon
 
 		std::string parseType();
 
+		/// Parses `[const] type` and reports whether the qualifier was present.
+		std::string parseQualifiedType(bool& constant);
+
 		std::unique_ptr<BlockStmt> parseBlock();
 
 		std::unique_ptr<Stmt> parseStatement();

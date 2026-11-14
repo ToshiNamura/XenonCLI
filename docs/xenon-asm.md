@@ -237,7 +237,7 @@ Xenon ASM — это **последовательность инструкций
 .enum   [export] <имя>                              ; в .types
 .parent <access> <тип>                              ; над .class/.struct
 
-.field [export] [access] <тип> <имя>                ; в .types
+.field [export] [const] [access] <тип> <имя>        ; в .types
 .item <имя>                                          ; в .enum
 .local <тип> <имя>                                  ; в .function/.method
 .locals <количество>                                ; точное число слотов (дизассемблер)
@@ -267,7 +267,7 @@ Xenon ASM — это **последовательность инструкций
 | `.import` | `.meta` | зависимость | строка |
 | `.class` / `.struct` / `.enum` | `.types` | тип (данные) | `export` (флаг), имя (строка) |
 | `.parent` | `.types` | базовый тип | доступ (u8), имя типа (строка) |
-| `.field` | `.types` | поле типа | `export`+доступ (флаги), тип, имя |
+| `.field` | `.types` | поле типа | `export`+`const`+доступ (флаги), тип, имя |
 | `.method` | `.types` | метод (с телом) | `export`+доступ (флаги), тип, имя, подпись, арность, локалы |
 | `.item` | `.types` (в `.enum`) | перечислитель | имя |
 | `.variable` | `.data` | глобальная переменная (данные) | `export` (флаг), тип, имя, начальное значение |
@@ -475,6 +475,7 @@ struct Function
 {
 	std::string                Name;
 	std::string                Signature;
+	std::vector<std::string>   Params;           // типы параметров
 	bool                       Exported = false;
 	std::size_t                Arity = 0;
 	std::size_t                Locals = 0;
@@ -491,6 +492,7 @@ struct Field
 	std::string                Name;
 	Access                     AccessModifier = Access::Private; // у struct по умолчанию public
 	bool                       Exported = false;
+	bool                       Constant = false; // поле только для чтения
 	AttributeList              Attributes;
 	std::vector<TemplateParam> TemplateParams;
 };

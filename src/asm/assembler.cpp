@@ -521,6 +521,12 @@ void xenon::Assembler::parseField(const std::vector<Token>& tokens)
 		exported = true;
 		++i;
 	}
+	bool constant = false;
+	if (i < tokens.size() && tokens[i].Text == "const")
+	{
+		constant = true;
+		++i;
+	}
 	Access access = (_currentType->Kind == TypeKind::Struct) ? Access::Public : Access::Private;
 	if (i < tokens.size() && parseAccess(tokens[i].Text, access))
 	{
@@ -528,7 +534,7 @@ void xenon::Assembler::parseField(const std::vector<Token>& tokens)
 	}
 	if (i + 2 != tokens.size())
 	{
-		fail("expected '.field [export] [access] <type> <name>'");
+		fail("expected '.field [export] [const] [access] <type> <name>'");
 	}
 	if (!_pendingParents.empty())
 	{
@@ -540,6 +546,7 @@ void xenon::Assembler::parseField(const std::vector<Token>& tokens)
 	field.Name = tokens[i + 1].Text;
 	field.AccessModifier = access;
 	field.Exported = exported;
+	field.Constant = constant;
 	field.Attributes = std::move(_pendingAttributes);
 	field.TemplateParams = std::move(_pendingTemplates);
 	clearPending();

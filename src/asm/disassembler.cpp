@@ -294,6 +294,10 @@ namespace xenon
 					{
 						os << " export";
 					}
+					if (field.Constant)
+					{
+						os << " const";
+					}
 					os << ' ' << accessName(field.AccessModifier) << ' ' << field.Type << ' '
 					   << field.Name << '\n';
 				}
@@ -401,7 +405,12 @@ namespace xenon
 				for (const auto& field : type.Fields)
 				{
 					writeIndent(os, 2);
-					os << ".field " << accessName(field.AccessModifier) << ' ' << field.Type << ' '
+					os << ".field";
+					if (field.Constant)
+					{
+						os << " const";
+					}
+					os << ' ' << accessName(field.AccessModifier) << ' ' << field.Type << ' '
 					   << field.Name << '\n';
 				}
 				for (const auto& enumerator : type.Enumerators)

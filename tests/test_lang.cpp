@@ -648,6 +648,207 @@ double main()
 	check(!compiler.compile(source, module), "incrementing an rvalue should fail to compile");
 }
 
+bool compileFails(const std::string& source, const std::string& expectedFragment)
+{
+	xenon::Module   module;
+	xenon::Compiler compiler;
+	if (compiler.compile(source, module))
+	{
+		return false;
+	}
+	return compiler.lastError().find(expectedFragment) != std::string::npos;
+}
+
+void testTypeChecking()
+{
+	check(compileFails(R"(
+export module BadReturn;
+double broken()
+{
+	return "text";
+}
+)", "returns double"),
+		  "returning a string from a double function should fail");
+
+	check(compileFails(R"(
+export module BadInit;
+double broken()
+{
+	double x = "text";
+	return x;
+}
+)", "cannot initialize 'x'"),
+		  "initializing a double with a string should fail");
+
+	check(compileFails(R"(
+export module BadAssign;
+double broken()
+{
+	string s = "text";
+	s = 1.0;
+	return 0.0;
+}
+)", "cannot assign"),
+		  "assigning a number to a string should fail");
+
+	check(compileFails(R"(
+export module BadArgument;
+
+double scale(double value)
+{
+	return value * 2.0;
+}
+
+double main()
+{
+	return scale("text");
+}
+)", "argument 1 of 'scale'"),
+		  "passing a string to a double parameter should fail");
+
+	check(compileFails(R"(
+export module BadArity;
+
+double add(double a, double b)
+{
+	return a + b;
+}
+
+double main()
+{
+	return add(1.0);
+}
+)", "expects 2 argument(s)"),
+		  "calling a function with too few arguments should fail");
+
+	check(compileFails(R"(
+export module BadTernary;
+
+double main()
+{
+	return 1.0 > 0.0 ? "text" : 2.0;
+}
+)", "incompatible types"),
+		  "ternary branches with incompatible types should fail");
+}
+
+void testConstChecking()
+{
+	check(compileFails(R"(
+export module ConstLocal;
+
+double main()
+{
+	const double pi = 3.0;
+	pi = 4.0;
+	return pi;
+}
+)", "const"),
+		  "assigning to a const local should fail");
+
+	check(compileFails(R"(
+export module ConstGlobal;
+
+const double pi = 3.0;
+
+double main()
+{
+	pi = 4.0;
+	return pi;
+}
+)", "const"),
+		  "assigning to a const global should fail");
+
+	check(compileFails(R"(
+export module ConstField;
+
+struct Circle
+{
+	const double radius;
+};
+
+double main()
+{
+	Circle c = new Circle();
+	c.radius = 2.0;
+	return c.radius;
+}
+)", "const"),
+		  "assigning to a const field should fail");
+
+	check(compileFails(R"(
+export module ConstParam;
+
+double scale(const double value)
+{
+	value = 2.0;
+	return value;
+}
+)", "const"),
+		  "assigning to a const parameter should fail");
+
+	check(compileFails(R"(
+export module ConstIncrement;
+
+double main()
+{
+	const double value = 1.0;
+	value++;
+	return value;
+}
+)", "const"),
+		  "incrementing a const local should fail");
+
+	check(compileFails(R"(
+export module ConstNoInit;
+
+double main()
+{
+	const double value;
+	return 0.0;
+}
+)", "initializer"),
+		  "a const local without an initializer should fail");
+
+	const std::string valid = R"(
+export module ConstOk;
+
+const double pi = 3.0;
+
+struct Circle
+{
+	const double radius;
+};
+
+double area(const double radius)
+{
+	Circle c = new Circle();
+	double scale = const_scale(radius);
+	return pi * scale * scale;
+}
+
+double const_scale(const double value)
+{
+	return value;
+}
+
+double main()
+{
+	return area(2.0) + pi;
+}
+)";
+
+	xenon::Module   module;
+	xenon::Compiler compiler;
+	check(compiler.compile(valid, module), "valid const usage failed: " + compiler.lastError());
+
+	xenon::Runtime runtime;
+	runtime.addModule(module);
+	check(runtime.run("main") == xenon::InterpretResult::Ok, "run('main') failed");
+	const auto* number = std::get_if<double>(&runtime.lastValue());
+	check(number != nullptr && std::abs(*number - 15.0) < 1e-12, "const usage result wrong");
+}
+
 void testParseError()
 {
 	const std::string source = R"(
@@ -684,6 +885,8 @@ int main()
 		testConstantExpressions();
 		testNestedTemplateArguments();
 		testIncrementRequiresTarget();
+		testTypeChecking();
+		testConstChecking();
 		testParseError();
 	}
 	catch (const std::exception& error)

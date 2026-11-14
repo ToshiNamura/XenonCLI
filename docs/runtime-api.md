@@ -131,7 +131,7 @@ struct Module
 
 ## Формат `.module` и Xenon ASM
 
-- `writeModuleFile` / `readModuleFile` — сериализация `Module` (версия 5).
+- `writeModuleFile` / `readModuleFile` — сериализация `Module` (версия 6).
 - `Assembler::assemble` — текст `.asm` → `Module`.
 - `disassemble` — `Module` → текст `.asm`.
 

@@ -234,9 +234,10 @@ void xenon::Parser::parseFunctionRest(xenon::FunctionDecl& function)
 	{
 		do
 		{
-			const std::string paramType = parseType();
+			bool              constant  = false;
+			const std::string paramType = parseQualifiedType(constant);
 			const std::string paramName = std::string(consume(xenon::TokenType::Identifier, "expected a parameter name").Lexeme);
-			function.Params.emplace_back(paramType, paramName);
+			function.addParam(paramType, paramName, constant);
 		} while (match(xenon::TokenType::Comma));
 	}
 
@@ -286,8 +287,9 @@ xenon::TypeDecl xenon::Parser::parseTypeDecl()
 
 	while (!check(xenon::TokenType::RightBrace) && !check(xenon::TokenType::End))
 	{
-		const std::string memberType = parseType();
-		const std::string memberName = std::string(consume(xenon::TokenType::Identifier, "expected a member name").Lexeme);
+		bool              memberConstant = false;
+		const std::string memberType     = parseQualifiedType(memberConstant);
+		const std::string memberName     = std::string(consume(xenon::TokenType::Identifier, "expected a member name").Lexeme);
 
 		if (match(xenon::TokenType::LeftParen))
 		{
@@ -299,9 +301,10 @@ xenon::TypeDecl xenon::Parser::parseTypeDecl()
 			{
 				do
 				{
-					const std::string paramType = parseType();
+					bool              constant  = false;
+					const std::string paramType = parseQualifiedType(constant);
 					const std::string paramName = std::string(consume(xenon::TokenType::Identifier, "expected a parameter name").Lexeme);
-					method.Params.emplace_back(paramType, paramName);
+					method.addParam(paramType, paramName, constant);
 				} while (match(xenon::TokenType::Comma));
 			}
 			consume(xenon::TokenType::RightParen, "expected ')' after parameters");
@@ -320,7 +323,7 @@ xenon::TypeDecl xenon::Parser::parseTypeDecl()
 		}
 		else
 		{
-			decl.Fields.push_back(FieldDecl{memberType, memberName});
+			decl.Fields.push_back(FieldDecl{memberType, memberName, memberConstant});
 			if (match(xenon::TokenType::Assign))
 			{
 				while (!check(xenon::TokenType::Semicolon) && !check(xenon::TokenType::Comma) &&
@@ -333,7 +336,7 @@ xenon::TypeDecl xenon::Parser::parseTypeDecl()
 			{
 				const std::string name = std::string(
 					consume(xenon::TokenType::Identifier, "expected a field name").Lexeme);
-				decl.Fields.push_back(FieldDecl{memberType, name});
+				decl.Fields.push_back(FieldDecl{memberType, name, memberConstant});
 				if (match(xenon::TokenType::Assign))
 				{
 					while (!check(xenon::TokenType::Semicolon) && !check(xenon::TokenType::Comma) &&
@@ -350,6 +353,12 @@ xenon::TypeDecl xenon::Parser::parseTypeDecl()
 	consume(xenon::TokenType::RightBrace, "expected '}' after type body");
 	consume(xenon::TokenType::Semicolon, "expected ';' after type declaration");
 	return decl;
+}
+
+std::string xenon::Parser::parseQualifiedType(bool& constant)
+{
+	constant = matchKeyword("const");
+	return parseType();
 }
 
 std::string xenon::Parser::parseType()
@@ -465,7 +474,7 @@ std::unique_ptr<xenon::Stmt> xenon::Parser::parseStatement()
 		return stmt;
 	}
 
-	if (isType(_current))
+	if (isType(_current) || checkKeyword("const"))
 	{
 		return parseVarDecl();
 	}
@@ -482,7 +491,7 @@ std::unique_ptr<xenon::Stmt> xenon::Parser::parseVarDecl()
 	auto stmt = std::make_unique<xenon::VarDeclStmt>();
 	stmt->Line = _current.Line;
 
-	stmt->Type = parseType();
+	stmt->Type = parseQualifiedType(stmt->Constant);
 	if (stmt->Type == "void")
 	{
 		fail("'void' is not a valid variable type");
@@ -492,6 +501,10 @@ std::unique_ptr<xenon::Stmt> xenon::Parser::parseVarDecl()
 	if (match(xenon::TokenType::Assign))
 	{
 		stmt->Init = parseExpression();
+	}
+	else if (stmt->Constant)
+	{
+		fail("a 'const' variable requires an initializer");
 	}
 	consume(xenon::TokenType::Semicolon, "expected ';' after variable declaration");
 	return stmt;
@@ -506,7 +519,7 @@ std::unique_ptr<xenon::Stmt> xenon::Parser::parseForStatement()
 
 	if (!check(xenon::TokenType::Semicolon))
 	{
-		if (isType(_current))
+		if (isType(_current) || checkKeyword("const"))
 		{
 			stmt->Init = parseVarDecl();
 		}

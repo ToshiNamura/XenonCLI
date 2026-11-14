@@ -38,6 +38,7 @@ namespace xenon
 		{
 			std::unordered_map<std::string, std::size_t> Names;
 			std::unordered_map<std::string, std::string> Types;
+			std::unordered_set<std::string>              Constants;
 			std::size_t                                  BaseSlot = 0;
 		};
 
@@ -80,6 +81,8 @@ namespace xenon
 
 		[[noreturn]] void fail(const std::string& message);
 
+		[[noreturn]] void fail(const std::string& message, int line);
+
 		void compileFunction(const FunctionDecl& function, Module& out, const std::string& qualifiedName = {});
 
 		void compileMethod(const FunctionDecl& method, Type& type);
@@ -112,7 +115,20 @@ namespace xenon
 
 		void leaveScope();
 
-		void declareLocal(const std::string& name, const std::string& type = {});
+		void declareLocal(const std::string& name, const std::string& type = {},
+						  bool constant = false);
+
+		/// Type name of an expression, or an empty string when it cannot be inferred.
+		[[nodiscard]] std::string typeOf(const Expr& expr);
+
+		/// True when a value of type `value` may be stored in a slot of type `target`.
+		[[nodiscard]] static bool isAssignable(const std::string& target, const std::string& value);
+
+		[[nodiscard]] static std::string baseType(const std::string& name);
+
+		void checkConstWrite(const std::string& name, int line);
+
+		void checkFieldConstant(const std::string& typeName, const std::string& fieldName, int line);
 
 		[[nodiscard]] std::size_t allocateTemp();
 
@@ -126,7 +142,15 @@ namespace xenon
 
 		[[nodiscard]] std::string localType(const std::string& name);
 
+		[[nodiscard]] std::string globalType(const std::string& name) const;
+
+		[[nodiscard]] std::string fieldType(const std::string& typeName, const std::string& fieldName);
+
+		void checkCall(const CallExpr& call);
+
 		[[nodiscard]] std::size_t resolveField(const Expr& object, const std::string& fieldName);
+
+		[[nodiscard]] std::string objectType(const Expr& object);
 
 		[[nodiscard]] std::string substituteType(const std::string& name) const;
 
@@ -137,6 +161,11 @@ namespace xenon
 		void ensureTypeInstantiated(const std::string& typeName);
 
 		void emitType(const TypeDecl& decl, const std::string& name, Module& out);
+
+		void registerSignature(const std::string& name, const std::vector<std::string>& params,
+							   const std::string& signature);
+
+		void registerSignature(const std::string& name, const FunctionDecl& function);
 
 		static std::string buildSignature(const std::string& returnType, const std::string& name,
 										  const std::vector<std::pair<std::string, std::string>>& params);
@@ -170,7 +199,15 @@ namespace xenon
 		std::unordered_set<std::string>                           _functions;
 		std::unordered_set<std::string>                           _methods;
 		std::unordered_set<std::string>                           _globals;
+		std::unordered_set<std::string>                           _constGlobals;
+		std::unordered_map<std::string, std::string>              _globalTypes;
 		std::unordered_map<std::string, std::vector<std::string>> _typeFields;
+		std::unordered_map<std::string, std::vector<std::string>> _typeFieldTypes;
+		std::unordered_map<std::string, std::unordered_set<std::string>> _constFields;
+		std::unordered_map<std::string, std::vector<std::string>> _functionParams;
+		std::unordered_map<std::string, std::string>              _functionReturns;
+		std::string                                               _currentReturnType = "void";
+		std::string                                               _currentFunctionName;
 		std::unordered_map<std::string, FunctionTemplate>         _functionTemplates;
 		std::unordered_map<std::string, TypeTemplate>             _typeTemplates;
 		std::unordered_set<std::string>                           _instantiatedFunctions;

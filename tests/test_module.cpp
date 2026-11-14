@@ -41,6 +41,7 @@ xenon::Module makeAddModule()
 	xenon::Function add;
 	add.Name      = "add";
 	add.Signature = "double add(double, double)";
+	add.Params    = {"double", "double"};
 	add.Arity     = 2;
 
 	add.Body.write(xenon::Instruction::Ldl, 1);
@@ -71,6 +72,7 @@ xenon::Module makeAddModule()
 	y.Type           = "double";
 	y.Name           = "y";
 	y.AccessModifier = xenon::Access::Public;
+	y.Constant       = true;
 	point.Fields.push_back(std::move(y));
 
 	xenon::Method length;
@@ -115,6 +117,8 @@ void testRoundTrip()
 	check(add.Name == "add", "function name did not round-trip");
 	check(add.Signature == "double add(double, double)", "function signature did not round-trip");
 	check(add.Arity == 2, "function arity did not round-trip");
+	check(add.Params.size() == 2 && add.Params[0] == "double" && add.Params[1] == "double",
+		  "parameter types did not round-trip");
 	check(add.Body.code().size() == 8, "function body size did not round-trip");
 	check(add.Body.constants().empty(), "function constants did not round-trip");
 	check(add.Attributes.size() == 1, "function attributes did not round-trip");
@@ -130,6 +134,7 @@ void testRoundTrip()
 	check(point.Methods.size() == 1 && point.Methods.front().Name == "length" &&
 			  point.Methods.front().Body.code().size() == 4,
 		  "methods did not round-trip");
+	check(point.Fields[1].Constant && !point.Fields[0].Constant, "const field did not round-trip");
 
 	check(loaded.Globals.front().Name == "pi" && loaded.Globals.front().Constant, "global did not round-trip");
 	const auto* pi = std::get_if<double>(&loaded.Globals.front().InitialValue);

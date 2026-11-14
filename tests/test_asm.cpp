@@ -36,7 +36,7 @@ const std::string kSource = R"(
     .parent public Base
     .class export Point
         .field public double x
-        .field private double y
+        .field const public double y
         .method public double length()
             ldl 0
             ldl 0
@@ -160,7 +160,9 @@ void testAssembler()
 		  "type template");
 	check(point.Fields.size() == 2, "two fields");
 	check(point.Fields[0].AccessModifier == xenon::Access::Public, "first field public");
-	check(point.Fields[1].AccessModifier == xenon::Access::Private, "second field private");
+	check(!point.Fields[0].Constant, "first field is mutable");
+	check(point.Fields[1].AccessModifier == xenon::Access::Public, "second field public");
+	check(point.Fields[1].Constant, "second field constant");
 	check(point.Methods.size() == 1, "one method");
 	check(point.Methods.front().Name == "length", "method name");
 	check(point.Methods.front().Signature == "double length()", "method signature");
@@ -272,6 +274,8 @@ void testDisassembler()
 	check(roundTripped.Types[0].Methods.size() == 1 &&
 			  roundTripped.Types[0].Methods.front().Body.code().size() == 8,
 		  "round-tripped method body");
+	check(roundTripped.Types[0].Fields.size() == 2 && roundTripped.Types[0].Fields[1].Constant,
+		  "round-tripped const field");
 }
 
 int main()
