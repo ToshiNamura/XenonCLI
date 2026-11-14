@@ -115,7 +115,7 @@ namespace xenon
 		{
 			Executable executable;
 			executable.Name     = name;
-			executable.Module   = moduleName;
+			executable.ModuleName = moduleName;
 			executable.Body     = body;
 			executable.Arity    = arity;
 			executable.Locals   = locals;
@@ -260,7 +260,7 @@ namespace xenon
 	{
 		Frame frame;
 		frame.binary = executable.Body;
-		frame.module = executable.Module;
+		frame.module = executable.ModuleName;
 		frame.ip     = 0;
 		frame.locals.resize(executable.Arity + executable.Locals);
 		for (std::size_t i = executable.Arity; i-- > 0;)
@@ -453,7 +453,7 @@ namespace xenon
 				const auto info = _typeInfo.find(typeName);
 				if (info != _typeInfo.end())
 				{
-					checkVisible(typeName, info->second.Module, info->second.Exported, frame.module);
+					checkVisible(typeName, info->second.ModuleName, info->second.Exported, frame.module);
 				}
 				const xenon::Ref ref      = _heap->allocate(xenon::ObjectKind::Object, typeName);
 				xenon::HeapObject* object = _heap->get(ref);
@@ -461,7 +461,7 @@ namespace xenon
 				const auto                      typeInfo    = _typeInfo.find(typeName);
 				if (typeInfo != _typeInfo.end())
 				{
-					const auto pool = _stringsByModule.find(typeInfo->second.Module);
+					const auto pool = _stringsByModule.find(typeInfo->second.ModuleName);
 					if (pool != _stringsByModule.end())
 					{
 						typeStrings = pool->second;
@@ -544,7 +544,7 @@ namespace xenon
 				const auto info = _globalInfo.find(name);
 				if (info != _globalInfo.end())
 				{
-					checkVisible(name, info->second.Module, info->second.Exported, frame.module);
+					checkVisible(name, info->second.ModuleName, info->second.Exported, frame.module);
 				}
 				push(position->second);
 				break;
@@ -561,7 +561,7 @@ namespace xenon
 				const auto info = _globalInfo.find(name);
 				if (info != _globalInfo.end())
 				{
-					checkVisible(name, info->second.Module, info->second.Exported, frame.module);
+					checkVisible(name, info->second.ModuleName, info->second.Exported, frame.module);
 				}
 				const xenon::Value value = pop();
 				position->second         = value;
@@ -780,7 +780,7 @@ namespace xenon
 				{
 					throw xenon::RuntimeError("unknown function: " + name);
 				}
-				checkVisible(executable->Name, executable->Module, executable->Exported, frame.module);
+				checkVisible(executable->Name, executable->ModuleName, executable->Exported, frame.module);
 				if (!executable->Defined)
 				{
 					callExternal(*executable, stack);

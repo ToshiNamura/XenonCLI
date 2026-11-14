@@ -84,7 +84,7 @@ namespace xenon
 		struct Executable
 		{
 			std::string        Name;
-			std::string        Module;    ///< Module that defines the executable.
+			std::string        ModuleName; ///< Module that defines the executable.
 			const XenonBinary* Body      = nullptr;
 			std::size_t        Arity     = 0;
 			std::size_t        Locals    = 0;
@@ -120,7 +120,7 @@ namespace xenon
 		std::vector<Module>                              _modules;
 		struct SymbolInfo
 		{
-			std::string Module;
+			std::string ModuleName;
 			bool        Exported = true;
 		};
 

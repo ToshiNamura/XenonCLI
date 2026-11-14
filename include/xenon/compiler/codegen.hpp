@@ -142,7 +142,7 @@ namespace xenon
 
 		struct ConstantValue
 		{
-			Value       Value       = Null{};
+			Value       Constant    = Null{};
 			std::size_t StringIndex = NoString; ///< Index into the module string pool.
 		};
 

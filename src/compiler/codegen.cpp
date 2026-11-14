@@ -550,7 +550,7 @@ namespace xenon
 					 field.Init->Line);
 			}
 			const ConstantValue initial = evaluateConstant(field.Init.get());
-			compiled.InitialValue       = initial.Value;
+			compiled.InitialValue       = initial.Constant;
 			compiled.InitialString      = initial.StringIndex;
 		}
 		return compiled;
@@ -590,7 +590,7 @@ namespace xenon
 		compiled.Type         = global.Type;
 		compiled.Constant     = global.Constant;
 		const xenon::CodeGenerator::ConstantValue initial = evaluateConstant(global.Init.get());
-		compiled.InitialValue  = initial.Value;
+		compiled.InitialValue  = initial.Constant;
 		compiled.InitialString = initial.StringIndex;
 		out.Globals.push_back(std::move(compiled));
 	}
@@ -647,7 +647,7 @@ namespace xenon
 			if (unary->Operation == xenon::UnaryExpr::Op::Negate)
 			{
 				const ConstantValue operand = evaluateConstant(unary->Operand.get());
-				if (const auto* number = std::get_if<double>(&operand.Value))
+				if (const auto* number = std::get_if<double>(&operand.Constant))
 				{
 					return ConstantValue{xenon::Value{-*number}, NoString};
 				}
@@ -658,8 +658,8 @@ namespace xenon
 		{
 			const ConstantValue left  = evaluateConstant(binary->Left.get());
 			const ConstantValue right = evaluateConstant(binary->Right.get());
-			const auto*         a     = std::get_if<double>(&left.Value);
-			const auto*         b     = std::get_if<double>(&right.Value);
+			const auto*         a     = std::get_if<double>(&left.Constant);
+			const auto*         b     = std::get_if<double>(&right.Constant);
 			if (a == nullptr || b == nullptr)
 			{
 				fail("the initializer must be a constant expression");
@@ -1420,7 +1420,7 @@ namespace xenon
 			{
 				fail("'case' labels must be numeric constants");
 			}
-			emitConstant(caseValue.Value);
+			emitConstant(caseValue.Constant);
 			emitOpcode(Instruction::Equ);
 			const auto falseJump = emitJump(Instruction::Jif);
 			bodyJumpForCase[i]   = emitJump(Instruction::Jmp);
