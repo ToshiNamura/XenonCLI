@@ -1,0 +1,59 @@
+name: Feature request
+description: Предложить возможность языка, VM, рантайма или инструментов
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Опишите задачу так, чтобы её можно было реализовать и проверить.
+        Сверьтесь с `ROADMAP.md` — возможно, пункт уже заведён.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Компонент
+      options:
+        - compiler (лексер, парсер, кодогенерация, .ixx)
+        - vm (инструкции, байт-код, исполнение)
+        - runtime (Runtime, куча, стек, xenon.env)
+        - asm/disasm (текстовый Xenon ASM, .module)
+        - packer (.xenon, манифест)
+        - cli
+        - build/ci
+        - documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема
+      description: Что сейчас неудобно или невозможно?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предлагаемое решение
+      description: Синтаксис, инструкции, API — насколько это уместно
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Что затрагивается
+      description: Модель `Module`, формат `.module`, опкоды, публичный API, документация
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Критерий готовности
+      description: Какой тест или пример докажет, что задача решена?
+      placeholder: "Новый тест в tests/test_lang.cpp + абзац в docs/language.md"
+    validations:
+      required: true
