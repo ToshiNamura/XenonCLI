@@ -7,21 +7,23 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <xenon/asm/model.hpp>
+#include <xenon/asm/opcode.hpp>
 #include <xenon/compiler/ast.hpp>
-#include <xenon/module/module.hpp>
 
 namespace xenon
 {
-	/// Compiles a parsed program into a compiled `Module` (packed symbols).
+	/// Compiles a parsed program into a `Module` (Xenon ASM declarations and code).
 	class CodeGenerator
 	{
 	public:
 		CodeGenerator(const Program& program, const Module& hints, bool hintMode = false);
 
-		/// Generates bytecode into `out`. Returns `true` on success.
+		/// Generates the module into `out`. Returns `true` on success.
 		bool generate(Module& out);
 
 		[[nodiscard]] const std::string& lastError() const noexcept
@@ -50,9 +52,37 @@ namespace xenon
 			std::vector<std::size_t> breaks;
 		};
 
+		struct FunctionTemplate
+		{
+			std::vector<std::string> Params;
+			const FunctionDecl*      Decl = nullptr;
+		};
+
+		struct TypeTemplate
+		{
+			std::vector<std::string> Params;
+			const TypeDecl*          Decl = nullptr;
+		};
+
+		struct PendingFunction
+		{
+			std::string                                  Name;
+			const FunctionDecl*                          Decl = nullptr;
+			std::unordered_map<std::string, std::string> Substitutions;
+		};
+
+		struct PendingType
+		{
+			std::string                                  Name;
+			const TypeDecl*                              Decl = nullptr;
+			std::unordered_map<std::string, std::string> Substitutions;
+		};
+
 		[[noreturn]] void fail(const std::string& message);
 
 		void compileFunction(const FunctionDecl& function, Module& out, const std::string& qualifiedName = {});
+
+		void compileMethod(const FunctionDecl& method, Type& type);
 
 		void compileTypeDecl(const TypeDecl& decl, Module& out);
 
@@ -82,7 +112,7 @@ namespace xenon
 
 		[[nodiscard]] bool hasLocal(const std::string& name) const;
 
-		[[nodiscard]] std::size_t resolveGlobal(const std::string& name);
+		void resolveGlobal(const std::string& name);
 
 		[[nodiscard]] Value evaluateConstant(const Expr* init);
 
@@ -92,25 +122,32 @@ namespace xenon
 
 		[[nodiscard]] std::string substituteType(const std::string& name) const;
 
-		[[nodiscard]] std::size_t resolveFunction(const std::string& callee);
+		void resolveFunction(const std::string& callee);
+
+		bool ensureFunctionInstantiated(const std::string& callee);
 
 		void ensureTypeInstantiated(const std::string& typeName);
 
-		void emitTypeSymbol(const TypeDecl& decl, const std::string& name, Module& out);
+		void emitType(const TypeDecl& decl, const std::string& name, Module& out);
 
-		void emitOpcode(OpCode op);
+		static std::string buildSignature(const std::string& returnType, const std::string& name,
+										  const std::vector<std::pair<std::string, std::string>>& params);
+
+		void emitOpcode(Instruction op);
 
 		void emitByte(std::uint8_t byte);
 
-		void emitU16(std::uint16_t value);
+		void emitU16(std::size_t value);
 
-		[[nodiscard]] std::size_t emitJump(OpCode op);
+		[[nodiscard]] std::size_t emitJump(Instruction op);
 
 		void patchJump(std::size_t operandOffset, std::size_t target);
 
 		void emitConstant(Value value);
 
 		void emitString(const std::string& value);
+
+		void emitName(const std::string& name);
 
 		const Program&             _program;
 		Module                     _hints;
@@ -122,36 +159,14 @@ namespace xenon
 		std::size_t                _slotCounter = 0;
 		std::size_t                _maxSlots = 0;
 
-		struct FunctionTemplate
-		{
-			std::vector<std::string> Params;
-			const FunctionDecl*      Decl = nullptr;
-		};
-
-		struct TypeTemplate
-		{
-			std::vector<std::string> Params;
-			const TypeDecl*          Decl = nullptr;
-		};
-
-		struct PendingFunction
-		{
-			std::string                                  Name;
-			const FunctionDecl*                          Decl = nullptr;
-			std::unordered_map<std::string, std::string> Substitutions;
-		};
-
-		struct PendingType
-		{
-			std::string     Name;
-			const TypeDecl* Decl = nullptr;
-		};
-
-		std::unordered_map<std::string, std::size_t>              _functionIndices;
-		std::unordered_map<std::string, std::size_t>              _globalIndices;
+		std::unordered_set<std::string>                           _functions;
+		std::unordered_set<std::string>                           _methods;
+		std::unordered_set<std::string>                           _globals;
 		std::unordered_map<std::string, std::vector<std::string>> _typeFields;
 		std::unordered_map<std::string, FunctionTemplate>         _functionTemplates;
 		std::unordered_map<std::string, TypeTemplate>             _typeTemplates;
+		std::unordered_set<std::string>                           _instantiatedFunctions;
+		std::unordered_set<std::string>                           _instantiatedTypes;
 		std::vector<PendingFunction>                              _pendingFunctions;
 		std::vector<PendingType>                                  _pendingTypes;
 		std::unordered_map<std::string, std::string>              _substitutions;

@@ -6,542 +6,654 @@
 #include <utility>
 #include <variant>
 
-#include <xenon/bytecode/opcode.hpp>
 #include <xenon/runtime/error.hpp>
 #include <xenon/runtime/virtual_heap.hpp>
 
 namespace xenon
 {
-	bool truthy(const xenon::Value& value)
+	namespace
 	{
-		if (const auto* boolean = std::get_if<bool>(&value))
+		bool truthy(const xenon::Value& value)
 		{
-			return *boolean;
-		}
-		if (const auto* number = std::get_if<double>(&value))
-		{
-			return *number != 0.0;
-		}
-		if (std::holds_alternative<xenon::Null>(value))
-		{
-			return false;
-		}
-		return true; // Ref
-	}
-
-	bool valuesEqual(const xenon::Value& a, const xenon::Value& b)
-	{
-		if (const auto* na = std::get_if<double>(&a))
-		{
-			if (const auto* nb = std::get_if<double>(&b))
+			if (const auto* boolean = std::get_if<bool>(&value))
 			{
-				return *na == *nb;
+				return *boolean;
 			}
-			return false;
-		}
-		if (const auto* ba = std::get_if<bool>(&a))
-		{
-			if (const auto* bb = std::get_if<bool>(&b))
+			if (const auto* number = std::get_if<double>(&value))
 			{
-				return *ba == *bb;
+				return *number != 0.0;
 			}
-			return false;
-		}
-		if (const auto* ra = std::get_if<xenon::Ref>(&a))
-		{
-			if (const auto* rb = std::get_if<xenon::Ref>(&b))
+			if (std::holds_alternative<xenon::Null>(value))
 			{
-				return ra->id == rb->id;
+				return false;
 			}
-			return false;
+			return true; // Ref
 		}
-		return std::holds_alternative<xenon::Null>(a) && std::holds_alternative<xenon::Null>(b);
-	}
-}
 
-void xenon::VirtualMachine::reset()
-{
-	_frames.clear();
-	_lastValue = xenon::Null{};
-}
-
-void xenon::VirtualMachine::load(const xenon::Module& module)
-{
-	_symbols = module.Symbols;
-	rebuildFunctionTable();
-	rebuildGlobals();
-}
-
-void xenon::VirtualMachine::loadAll(const std::vector<xenon::Module>& modules)
-{
-	_symbols.clear();
-	for (const auto& module : modules)
-	{
-		_symbols.insert(_symbols.end(), module.Symbols.begin(), module.Symbols.end());
-	}
-	rebuildFunctionTable();
-	rebuildGlobals();
-}
-
-void xenon::VirtualMachine::rebuildGlobals()
-{
-	_globals.clear();
-	for (const auto& symbol : _symbols)
-	{
-		if (symbol.Kind == xenon::SymbolKind::Variable)
+		bool valuesEqual(const xenon::Value& a, const xenon::Value& b)
 		{
-			_globals.push_back(symbol.InitialValue);
+			if (const auto* na = std::get_if<double>(&a))
+			{
+				if (const auto* nb = std::get_if<double>(&b))
+				{
+					return *na == *nb;
+				}
+				return false;
+			}
+			if (const auto* ba = std::get_if<bool>(&a))
+			{
+				if (const auto* bb = std::get_if<bool>(&b))
+				{
+					return *ba == *bb;
+				}
+				return false;
+			}
+			if (const auto* ra = std::get_if<xenon::Ref>(&a))
+			{
+				if (const auto* rb = std::get_if<xenon::Ref>(&b))
+				{
+					return ra->id == rb->id;
+				}
+				return false;
+			}
+			return std::holds_alternative<xenon::Null>(a) && std::holds_alternative<xenon::Null>(b);
 		}
 	}
-}
 
-void xenon::VirtualMachine::rebuildFunctionTable()
-{
-	_functions.clear();
-	for (const auto& symbol : _symbols)
+	void xenon::VirtualMachine::reset()
 	{
-		if (symbol.Kind == xenon::SymbolKind::Function)
+		_frames.clear();
+		_lastValue = xenon::Null{};
+	}
+
+	void xenon::VirtualMachine::load(const xenon::Module& module)
+	{
+		_modules.clear();
+		_modules.push_back(module);
+		rebuildTables();
+	}
+
+	void xenon::VirtualMachine::loadAll(const std::vector<xenon::Module>& modules)
+	{
+		_modules = modules;
+		rebuildTables();
+	}
+
+	void xenon::VirtualMachine::rebuildTables()
+	{
+		_executables.clear();
+		_types.clear();
+		_globals.clear();
+
+		const auto insertExecutable = [this](const std::string& name, const XenonBinary* body,
+											 std::size_t arity, std::size_t locals, bool defined)
 		{
-			_functions.push_back(&symbol);
-		}
-	}
-}
+			Executable executable;
+			executable.Name    = name;
+			executable.Body    = body;
+			executable.Arity   = arity;
+			executable.Locals  = locals;
+			executable.Defined = defined;
 
-const xenon::Symbol* xenon::VirtualMachine::find(std::string_view name) const noexcept
-{
-	for (const auto& symbol : _symbols)
-	{
-		if (symbol.Name == name)
+			const auto [position, inserted] = _executables.emplace(name, std::move(executable));
+			if (!inserted && !position->second.Defined && defined)
+			{
+				position->second = Executable{name, body, arity, locals, defined};
+			}
+		};
+
+		for (const auto& module : _modules)
 		{
-			return &symbol;
+			for (const auto& function : module.Functions)
+			{
+				insertExecutable(function.Name, &function.Body, function.Arity, function.Locals, function.Defined);
+			}
+
+			for (const auto& type : module.Types)
+			{
+				const auto [position, inserted] = _types.emplace(type.Name, &type);
+				if (!inserted && !position->second->Defined && type.Defined)
+				{
+					position->second = &type;
+				}
+
+				for (const auto& method : type.Methods)
+				{
+					insertExecutable(type.Name + "::" + method.Name, &method.Body, method.Arity,
+									 method.Locals, method.Defined);
+				}
+			}
+
+			for (const auto& global : module.Globals)
+			{
+				_globals.emplace(global.Name, global.InitialValue);
+			}
 		}
 	}
-	return nullptr;
-}
 
-void xenon::VirtualMachine::call(const xenon::Symbol& symbol, xenon::VirtualStack& stack)
-{
-	Frame frame;
-	frame.binary = &symbol.Body;
-	frame.ip = 0;
-	frame.locals.resize(symbol.Arity + symbol.Locals);
-	for (std::size_t i = symbol.Arity; i-- > 0;)
+	const xenon::VirtualMachine::Executable* xenon::VirtualMachine::findExecutable(std::string_view name) const noexcept
 	{
-		frame.locals[i] = stack.pop();
-	}
-	_frames.push_back(std::move(frame));
-}
+		const auto position = _executables.find(std::string(name));
+		if (position != _executables.end())
+		{
+			return &position->second;
+		}
 
-void xenon::VirtualMachine::registerNative(std::string name, xenon::NativeFunction function)
-{
-	_natives[std::move(name)] = std::move(function);
-}
-
-void xenon::VirtualMachine::callExternal(const xenon::Symbol& symbol, xenon::VirtualStack& stack)
-{
-	std::vector<xenon::Value> args(symbol.Arity);
-	for (std::size_t i = symbol.Arity; i-- > 0;)
-	{
-		args[i] = stack.pop();
-	}
-
-	const auto it = _natives.find(symbol.Name);
-	if (it == _natives.end())
-	{
-		throw xenon::RuntimeError("external function not bound: " + symbol.Name);
-	}
-	stack.push(it->second(args));
-}
-
-xenon::InterpretResult xenon::VirtualMachine::run(std::string_view name, xenon::VirtualStack& stack)
-{
-	const xenon::Symbol* symbol = find(name);
-	if (symbol == nullptr)
-	{
-		throw xenon::RuntimeError("unknown symbol: " + std::string(name));
-	}
-	if (symbol->Kind != xenon::SymbolKind::Function)
-	{
-		throw xenon::RuntimeError("symbol is not a function: " + std::string(name));
+		// Allow an unqualified method name (e.g. `length`) to resolve to `Type::length`.
+		for (const auto& module : _modules)
+		{
+			for (const auto& type : module.Types)
+			{
+				for (const auto& method : type.Methods)
+				{
+					if (method.Name == name)
+					{
+						const auto qualified = _executables.find(type.Name + "::" + method.Name);
+						if (qualified != _executables.end())
+						{
+							return &qualified->second;
+						}
+					}
+				}
+			}
+		}
+		return nullptr;
 	}
 
-	reset();
-
-	if (!symbol->Defined)
+	const xenon::Function* xenon::VirtualMachine::findFunction(std::string_view name) const noexcept
 	{
-		callExternal(*symbol, stack);
-		_lastValue = stack.pop();
+		for (const auto& module : _modules)
+		{
+			if (const xenon::Function* function = module.findFunction(name))
+			{
+				return function;
+			}
+		}
+		return nullptr;
+	}
+
+	const xenon::Method* xenon::VirtualMachine::findMethod(std::string_view name) const noexcept
+	{
+		for (const auto& module : _modules)
+		{
+			if (const xenon::Method* method = module.findMethod(name))
+			{
+				return method;
+			}
+		}
+		return nullptr;
+	}
+
+	const xenon::Type* xenon::VirtualMachine::findType(std::string_view name) const noexcept
+	{
+		const auto position = _types.find(std::string(name));
+		return position != _types.end() ? position->second : nullptr;
+	}
+
+	bool xenon::VirtualMachine::hasFunction(std::string_view name) const noexcept
+	{
+		return findExecutable(name) != nullptr;
+	}
+
+	void xenon::VirtualMachine::call(const xenon::VirtualMachine::Executable& executable, xenon::VirtualStack& stack)
+	{
+		Frame frame;
+		frame.binary = executable.Body;
+		frame.ip     = 0;
+		frame.locals.resize(executable.Arity + executable.Locals);
+		for (std::size_t i = executable.Arity; i-- > 0;)
+		{
+			frame.locals[i] = stack.pop();
+		}
+		_frames.push_back(std::move(frame));
+	}
+
+	void xenon::VirtualMachine::registerNative(std::string name, xenon::NativeFunction function)
+	{
+		_natives[std::move(name)] = std::move(function);
+	}
+
+	void xenon::VirtualMachine::callExternal(const xenon::VirtualMachine::Executable& executable,
+											 xenon::VirtualStack& stack)
+	{
+		std::vector<xenon::Value> args(executable.Arity);
+		for (std::size_t i = executable.Arity; i-- > 0;)
+		{
+			args[i] = stack.pop();
+		}
+
+		const auto position = _natives.find(executable.Name);
+		if (position == _natives.end())
+		{
+			throw xenon::RuntimeError("external function not bound: " + executable.Name);
+		}
+		stack.push(position->second(args));
+	}
+
+	xenon::InterpretResult xenon::VirtualMachine::run(std::string_view name, xenon::VirtualStack& stack)
+	{
+		const xenon::VirtualMachine::Executable* executable = findExecutable(name);
+		if (executable == nullptr)
+		{
+			throw xenon::RuntimeError("unknown symbol: " + std::string(name));
+		}
+
+		reset();
+
+		if (!executable->Defined)
+		{
+			callExternal(*executable, stack);
+			_lastValue = stack.pop();
+			return xenon::InterpretResult::Ok;
+		}
+
+		call(*executable, stack);
+		execute(stack);
 		return xenon::InterpretResult::Ok;
 	}
 
-	call(*symbol, stack);
-	execute(stack);
-	return xenon::InterpretResult::Ok;
-}
-
-xenon::InterpretResult xenon::VirtualMachine::interpret(const xenon::XenonBinary& binary, xenon::VirtualStack& stack)
-{
-	reset();
-
-	Frame frame;
-	frame.binary = &binary;
-	frame.ip     = 0;
-	_frames.push_back(std::move(frame));
-
-	execute(stack);
-	return xenon::InterpretResult::Ok;
-}
-
-void xenon::VirtualMachine::execute(xenon::VirtualStack& stack)
-{
-	while (true)
+	xenon::InterpretResult xenon::VirtualMachine::interpret(const xenon::XenonBinary& binary,
+															xenon::VirtualStack& stack)
 	{
-		Frame& frame              = _frames.back();
-		const xenon::XenonBinary& binary = *frame.binary;
-		const auto& code                 = binary.code();
-		const auto& constants            = binary.constants();
+		reset();
 
-		auto readByte = [&]() -> std::uint8_t
+		Frame frame;
+		frame.binary = &binary;
+		frame.ip     = 0;
+		_frames.push_back(std::move(frame));
+
+		execute(stack);
+		return xenon::InterpretResult::Ok;
+	}
+
+	void xenon::VirtualMachine::execute(xenon::VirtualStack& stack)
+	{
+		while (true)
 		{
-			if (frame.ip >= code.size())
+			Frame& frame                    = _frames.back();
+			const xenon::XenonBinary& binary = *frame.binary;
+			const auto& code                 = binary.code();
+			const auto& constants            = binary.constants();
+			const auto& strings              = binary.strings();
+
+			auto readByte = [&]() -> std::uint8_t
 			{
-				throw xenon::RuntimeError("unexpected end of bytecode");
-			}
-			return code[frame.ip++];
-		};
+				if (frame.ip >= code.size())
+				{
+					throw xenon::RuntimeError("unexpected end of bytecode");
+				}
+				return code[frame.ip++];
+			};
 
-		auto readI16 = [&]() -> std::int16_t
-		{
-			if (frame.ip + 2 > code.size())
+			auto readU16 = [&]() -> std::uint16_t
 			{
-				throw xenon::RuntimeError("unexpected end of bytecode");
-			}
-			const auto value = static_cast<std::int16_t>(code[frame.ip] | (static_cast<std::uint16_t>(code[frame.ip + 1]) << 8));
-			frame.ip += 2;
-			return value;
-		};
+				if (frame.ip + 2 > code.size())
+				{
+					throw xenon::RuntimeError("unexpected end of bytecode");
+				}
+				const auto value = static_cast<std::uint16_t>(
+					code[frame.ip] | (static_cast<std::uint16_t>(code[frame.ip + 1]) << 8));
+				frame.ip += 2;
+				return value;
+			};
 
-		auto readConstant = [&]() -> const Value&
-		{
-			const auto index = readByte();
-			if (index >= constants.size())
+			auto readI16 = [&]() -> std::int16_t
 			{
-				throw xenon::RuntimeError("constant index out of range");
-			}
-			return constants[index];
-		};
+				return static_cast<std::int16_t>(readU16());
+			};
 
-		auto push = [&stack](xenon::Value value)
-		{
-			stack.push(std::move(value));
-		};
-
-		auto pop = [&stack]() -> xenon::Value
-		{
-			return stack.pop();
-		};
-
-		auto expectNumber = [](const xenon::Value& value) -> double
-		{
-			if (const auto* number = std::get_if<double>(&value))
+			auto readU32 = [&]() -> std::uint32_t
 			{
-				return *number;
-			}
-			throw xenon::RuntimeError("operand must be a number");
-		};
+				if (frame.ip + 4 > code.size())
+				{
+					throw xenon::RuntimeError("unexpected end of bytecode");
+				}
+				const auto value = static_cast<std::uint32_t>(code[frame.ip]) |
+								   (static_cast<std::uint32_t>(code[frame.ip + 1]) << 8) |
+								   (static_cast<std::uint32_t>(code[frame.ip + 2]) << 16) |
+								   (static_cast<std::uint32_t>(code[frame.ip + 3]) << 24);
+				frame.ip += 4;
+				return value;
+			};
 
-		const auto op = static_cast<xenon::OpCode>(readByte());
-
-		switch (op)
-		{
-		case xenon::OpCode::Constant:
-			push(readConstant());
-			break;
-
-		case xenon::OpCode::String:
-		{
-			const auto index = readByte();
-			const auto& strings = binary.strings();
-			if (index >= strings.size())
+			auto readConstant = [&]() -> const Value&
 			{
-				throw xenon::RuntimeError("string index out of range");
-			}
-			if (_heap == nullptr)
+				const auto index = readU16();
+				if (index >= constants.size())
+				{
+					throw xenon::RuntimeError("constant index out of range");
+				}
+				return constants[index];
+			};
+
+			auto readString = [&]() -> const std::string&
 			{
-				throw xenon::RuntimeError("no heap available for string literal");
-			}
-			const xenon::Ref ref = _heap->allocate(xenon::ObjectKind::String);
-			_heap->get(ref)->Text = strings[index];
-			push(xenon::Value{ref});
-			break;
-		}
+				const auto index = readU16();
+				if (index >= strings.size())
+				{
+					throw xenon::RuntimeError("string index out of range");
+				}
+				return strings[index];
+			};
 
-		case xenon::OpCode::New:
-		{
-			const auto index    = readByte();
-			const auto& strings = binary.strings();
-			if (index >= strings.size())
+			auto push = [&stack](xenon::Value value)
 			{
-				throw xenon::RuntimeError("type index out of range");
-			}
-			if (_heap == nullptr)
+				stack.push(std::move(value));
+			};
+
+			auto pop = [&stack]() -> xenon::Value
 			{
-				throw xenon::RuntimeError("no heap available");
-			}
-			const xenon::Symbol* classSymbol = find(strings[index]);
-			if (classSymbol == nullptr || (classSymbol->Kind != xenon::SymbolKind::Struct && classSymbol->Kind != xenon::SymbolKind::Class))
+				return stack.pop();
+			};
+
+			auto expectNumber = [](const xenon::Value& value) -> double
 			{
-				throw xenon::RuntimeError("unknown type: " + strings[index]);
-			}
-			const xenon::Ref ref      = _heap->allocate(xenon::ObjectKind::Object, strings[index]);
-			xenon::HeapObject* object = _heap->get(ref);
-			for (const auto& field : classSymbol->Fields)
+				if (const auto* number = std::get_if<double>(&value))
+				{
+					return *number;
+				}
+				throw xenon::RuntimeError("operand must be a number");
+			};
+
+			const auto opcode = static_cast<xenon::Instruction>(readByte());
+
+			switch (opcode)
 			{
-				object->Fields[field] = xenon::Null{};
-			}
-			push(xenon::Value{ref});
-			break;
-		}
+			case xenon::Instruction::Const:
+				push(readConstant());
+				break;
 
-		case xenon::OpCode::GetField:
-		{
-			const auto index               = readByte();
-			const xenon::Value objectValue = pop();
-			const auto* ref                = std::get_if<xenon::Ref>(&objectValue);
-			if (ref == nullptr || _heap == nullptr)
+			case xenon::Instruction::Str:
 			{
-				throw xenon::RuntimeError("GetField on a non-object");
+				const std::string& text = readString();
+				if (_heap == nullptr)
+				{
+					throw xenon::RuntimeError("no heap available for string literal");
+				}
+				const xenon::Ref ref = _heap->allocate(xenon::ObjectKind::String);
+				_heap->get(ref)->Text = text;
+				push(xenon::Value{ref});
+				break;
 			}
-			const xenon::HeapObject* object = _heap->get(*ref);
-			if (object == nullptr || object->Kind != xenon::ObjectKind::Object)
+
+			case xenon::Instruction::New:
 			{
-				throw xenon::RuntimeError("GetField on a non-object");
+				const std::string& typeName = readString();
+				if (_heap == nullptr)
+				{
+					throw xenon::RuntimeError("no heap available");
+				}
+				const xenon::Type* type = findType(typeName);
+				if (type == nullptr || type->Kind == xenon::TypeKind::Enum)
+				{
+					throw xenon::RuntimeError("unknown type: " + typeName);
+				}
+				const xenon::Ref ref      = _heap->allocate(xenon::ObjectKind::Object, typeName);
+				xenon::HeapObject* object = _heap->get(ref);
+				for (const auto& field : type->Fields)
+				{
+					object->Fields[field.Name] = xenon::Null{};
+				}
+				push(xenon::Value{ref});
+				break;
 			}
-			const xenon::Symbol* classSymbol = find(object->ClassName);
-			if (classSymbol == nullptr || index >= classSymbol->Fields.size())
+
+			case xenon::Instruction::Getf:
 			{
-				throw xenon::RuntimeError("field index out of range");
+				const auto         index       = readU16();
+				const xenon::Value objectValue = pop();
+				const auto*        ref         = std::get_if<xenon::Ref>(&objectValue);
+				if (ref == nullptr || _heap == nullptr)
+				{
+					throw xenon::RuntimeError("GetField on a non-object");
+				}
+				const xenon::HeapObject* object = _heap->get(*ref);
+				if (object == nullptr || object->Kind != xenon::ObjectKind::Object)
+				{
+					throw xenon::RuntimeError("GetField on a non-object");
+				}
+				const xenon::Type* type = findType(object->ClassName);
+				if (type == nullptr || index >= type->Fields.size())
+				{
+					throw xenon::RuntimeError("field index out of range");
+				}
+				const auto field = object->Fields.find(type->Fields[index].Name);
+				push(field != object->Fields.end() ? field->second : xenon::Value{Null{}});
+				break;
 			}
-			const auto field = object->Fields.find(classSymbol->Fields[index]);
-			push(field != object->Fields.end() ? field->second : xenon::Value{Null{}});
-			break;
-		}
 
-		case xenon::OpCode::SetField:
-		{
-			const auto         index       = readByte();
-			const xenon::Value value       = pop();
-			const xenon::Value objectValue = pop();
-			const auto*        ref         = std::get_if<xenon::Ref>(&objectValue);
-			if (ref == nullptr || _heap == nullptr)
+			case xenon::Instruction::Setf:
 			{
-				throw xenon::RuntimeError("SetField on a non-object");
+				const auto         index       = readU16();
+				const xenon::Value value       = pop();
+				const xenon::Value objectValue = pop();
+				const auto*        ref         = std::get_if<xenon::Ref>(&objectValue);
+				if (ref == nullptr || _heap == nullptr)
+				{
+					throw xenon::RuntimeError("SetField on a non-object");
+				}
+				xenon::HeapObject* object = _heap->get(*ref);
+				if (object == nullptr || object->Kind != xenon::ObjectKind::Object)
+				{
+					throw xenon::RuntimeError("SetField on a non-object");
+				}
+				const xenon::Type* type = findType(object->ClassName);
+				if (type == nullptr || index >= type->Fields.size())
+				{
+					throw xenon::RuntimeError("field index out of range");
+				}
+				object->Fields[type->Fields[index].Name] = value;
+				push(value);
+				break;
 			}
-			xenon::HeapObject* object = _heap->get(*ref);
-			if (object == nullptr || object->Kind != xenon::ObjectKind::Object)
+
+			case xenon::Instruction::Ldg:
 			{
-				throw xenon::RuntimeError("SetField on a non-object");
+				const std::string& name = readString();
+				const auto position     = _globals.find(name);
+				if (position == _globals.end())
+				{
+					throw xenon::RuntimeError("unknown global: " + name);
+				}
+				push(position->second);
+				break;
 			}
-			const xenon::Symbol* classSymbol = find(object->ClassName);
-			if (classSymbol == nullptr || index >= classSymbol->Fields.size())
+
+			case xenon::Instruction::Stg:
 			{
-				throw xenon::RuntimeError("field index out of range");
+				const std::string& name = readString();
+				const auto position     = _globals.find(name);
+				if (position == _globals.end())
+				{
+					throw xenon::RuntimeError("unknown global: " + name);
+				}
+				const xenon::Value value = pop();
+				position->second         = value;
+				push(value);
+				break;
 			}
-			object->Fields[classSymbol->Fields[index]] = value;
-			push(value);
-			break;
-		}
 
-		case xenon::OpCode::LoadGlobal:
-		{
-			const auto index = readByte();
-			if (index >= _globals.size())
+			case xenon::Instruction::Ldl:
 			{
-				throw xenon::RuntimeError("global index out of range");
+				const auto slot = readU16();
+				if (slot >= frame.locals.size())
+				{
+					throw xenon::RuntimeError("local slot out of range");
+				}
+				push(frame.locals[slot]);
+				break;
 			}
-			push(_globals[index]);
-			break;
-		}
 
-		case xenon::OpCode::StoreGlobal:
-		{
-			const auto index = readByte();
-			if (index >= _globals.size())
+			case xenon::Instruction::Stl:
 			{
-				throw xenon::RuntimeError("global index out of range");
+				const auto slot = readU16();
+				if (slot >= frame.locals.size())
+				{
+					throw xenon::RuntimeError("local slot out of range");
+				}
+				frame.locals[slot] = pop();
+				break;
 			}
-			const xenon::Value value = pop();
-			_globals[index] = value;
-			push(value);
-			break;
-		}
 
-		case xenon::OpCode::LoadLocal:
-		{
-			const auto slot = readByte();
-			if (slot >= frame.locals.size())
+			case xenon::Instruction::Pop:
+				pop();
+				break;
+
+			case xenon::Instruction::Neg:
+				push(-expectNumber(pop()));
+				break;
+
+			case xenon::Instruction::Not:
+				push(xenon::Value{!truthy(pop())});
+				break;
+
+			case xenon::Instruction::Add:
 			{
-				throw xenon::RuntimeError("local slot out of range");
+				const auto b = expectNumber(pop());
+				const auto a = expectNumber(pop());
+				push(a + b);
+				break;
 			}
-			push(frame.locals[slot]);
-			break;
-		}
 
-		case xenon::OpCode::StoreLocal:
-		{
-			const auto slot = readByte();
-			if (slot >= frame.locals.size())
+			case xenon::Instruction::Sub:
 			{
-				throw xenon::RuntimeError("local slot out of range");
+				const auto b = expectNumber(pop());
+				const auto a = expectNumber(pop());
+				push(a - b);
+				break;
 			}
-			frame.locals[slot] = pop();
-			break;
-		}
 
-		case xenon::OpCode::Pop:
-			pop();
-			break;
-
-		case xenon::OpCode::Negate:
-			push(-expectNumber(pop()));
-			break;
-
-		case xenon::OpCode::Not:
-			push(xenon::Value{!xenon::truthy(pop())});
-			break;
-
-		case xenon::OpCode::Add:
-		{
-			const auto b = expectNumber(pop());
-			const auto a = expectNumber(pop());
-			push(a + b);
-			break;
-		}
-
-		case xenon::OpCode::Subtract:
-		{
-			const auto b = expectNumber(pop());
-			const auto a = expectNumber(pop());
-			push(a - b);
-			break;
-		}
-
-		case xenon::OpCode::Multiply:
-		{
-			const auto b = expectNumber(pop());
-			const auto a = expectNumber(pop());
-			push(a * b);
-			break;
-		}
-
-		case xenon::OpCode::Divide:
-		{
-			const auto b = expectNumber(pop());
-			const auto a = expectNumber(pop());
-			if (b == 0.0)
+			case xenon::Instruction::Mul:
 			{
-				throw xenon::RuntimeError("division by zero");
+				const auto b = expectNumber(pop());
+				const auto a = expectNumber(pop());
+				push(a * b);
+				break;
 			}
-			push(a / b);
-			break;
-		}
 
-		case xenon::OpCode::Equal:
-		{
-			const auto b = pop();
-			const auto a = pop();
-			push(xenon::Value{xenon::valuesEqual(a, b)});
-			break;
-		}
-
-		case xenon::OpCode::NotEqual:
-		{
-			const auto b = pop();
-			const auto a = pop();
-			push(xenon::Value{!xenon::valuesEqual(a, b)});
-			break;
-		}
-
-		case xenon::OpCode::Less:
-		{
-			const auto b = expectNumber(pop());
-			const auto a = expectNumber(pop());
-			push(xenon::Value{a < b});
-			break;
-		}
-
-		case xenon::OpCode::LessEqual:
-		{
-			const auto b = expectNumber(pop());
-			const auto a = expectNumber(pop());
-			push(xenon::Value{a <= b});
-			break;
-		}
-
-		case xenon::OpCode::Greater:
-		{
-			const auto b = expectNumber(pop());
-			const auto a = expectNumber(pop());
-			push(xenon::Value{a > b});
-			break;
-		}
-
-		case xenon::OpCode::GreaterEqual:
-		{
-			const auto b = expectNumber(pop());
-			const auto a = expectNumber(pop());
-			push(xenon::Value{a >= b});
-			break;
-		}
-
-		case xenon::OpCode::Jump:
-			frame.ip += readI16();
-			break;
-
-		case xenon::OpCode::JumpIfFalse:
-		{
-			const auto offset = readI16();
-			if (!xenon::truthy(pop()))
+			case xenon::Instruction::Div:
 			{
-				frame.ip += offset;
+				const auto b = expectNumber(pop());
+				const auto a = expectNumber(pop());
+				if (b == 0.0)
+				{
+					throw xenon::RuntimeError("division by zero");
+				}
+				push(a / b);
+				break;
 			}
-			break;
-		}
 
-		case xenon::OpCode::Call:
-		{
-			const auto index = readByte();
-			if (index >= _functions.size())
+			case xenon::Instruction::Equ:
 			{
-				throw xenon::RuntimeError("function index out of range");
+				const auto b = pop();
+				const auto a = pop();
+				push(xenon::Value{valuesEqual(a, b)});
+				break;
 			}
-			const xenon::Symbol* function = _functions[index];
-			if (!function->Defined)
-			{
-				callExternal(*function, stack);
-			}
-			else
-			{
-				call(*function, stack);
-			}
-			break;
-		}
 
-		case xenon::OpCode::Return:
-		{
-			xenon::Value result = pop();
-			_frames.pop_back();
-			if (_frames.empty())
+			case xenon::Instruction::Neq:
 			{
-				_lastValue = std::move(result);
-				return;
+				const auto b = pop();
+				const auto a = pop();
+				push(xenon::Value{!valuesEqual(a, b)});
+				break;
 			}
-			push(std::move(result));
-			break;
-		}
 
-		default:
-			throw xenon::RuntimeError("unknown opcode");
+			case xenon::Instruction::Lss:
+			{
+				const auto b = expectNumber(pop());
+				const auto a = expectNumber(pop());
+				push(xenon::Value{a < b});
+				break;
+			}
+
+			case xenon::Instruction::Leq:
+			{
+				const auto b = expectNumber(pop());
+				const auto a = expectNumber(pop());
+				push(xenon::Value{a <= b});
+				break;
+			}
+
+			case xenon::Instruction::Gtr:
+			{
+				const auto b = expectNumber(pop());
+				const auto a = expectNumber(pop());
+				push(xenon::Value{a > b});
+				break;
+			}
+
+			case xenon::Instruction::Geq:
+			{
+				const auto b = expectNumber(pop());
+				const auto a = expectNumber(pop());
+				push(xenon::Value{a >= b});
+				break;
+			}
+
+			case xenon::Instruction::Jmp:
+				frame.ip += readI16();
+				break;
+
+			case xenon::Instruction::Jif:
+			{
+				const auto offset = readI16();
+				if (!truthy(pop()))
+				{
+					frame.ip += offset;
+				}
+				break;
+			}
+
+			case xenon::Instruction::Jmpa:
+				frame.ip = readU32();
+				break;
+
+			case xenon::Instruction::Jifa:
+			{
+				const auto address = readU32();
+				if (!truthy(pop()))
+				{
+					frame.ip = address;
+				}
+				break;
+			}
+
+			case xenon::Instruction::Call:
+			{
+				const std::string& name = readString();
+				const xenon::VirtualMachine::Executable* executable = findExecutable(name);
+				if (executable == nullptr)
+				{
+					throw xenon::RuntimeError("unknown function: " + name);
+				}
+				if (!executable->Defined)
+				{
+					callExternal(*executable, stack);
+				}
+				else
+				{
+					call(*executable, stack);
+				}
+				break;
+			}
+
+			case xenon::Instruction::Ret:
+			{
+				xenon::Value result = pop();
+				_frames.pop_back();
+				if (_frames.empty())
+				{
+					_lastValue = std::move(result);
+					return;
+				}
+				push(std::move(result));
+				break;
+			}
+
+			default:
+				throw xenon::RuntimeError("unknown opcode");
+			}
 		}
 	}
 }

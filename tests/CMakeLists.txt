@@ -1,34 +1,23 @@
-add_executable(xenon_tests_vm
-    test_vm.cpp)
+# One test executable per component keeps test output focused and lets CTest run
+# them in parallel. Add new components to the list; the naming convention is
+# tests/test_<name>.cpp -> xenon_tests_<name>.
+set(XENON_TEST_COMPONENTS
+    vm
+    module
+    env
+    lang
+    hint
+    asm)
 
-target_link_libraries(xenon_tests_vm PRIVATE xenon::core)
+foreach(component IN LISTS XENON_TEST_COMPONENTS)
+    add_executable(xenon_tests_${component}
+        test_${component}.cpp)
 
-add_test(NAME xenon_tests_vm COMMAND xenon_tests_vm)
+    target_link_libraries(xenon_tests_${component} PRIVATE xenon::core)
 
-add_executable(xenon_tests_module
-    test_module.cpp)
+    if(component STREQUAL "env")
+        target_link_libraries(xenon_tests_${component} PRIVATE xenon::env)
+    endif()
 
-target_link_libraries(xenon_tests_module PRIVATE xenon::core)
-
-add_test(NAME xenon_tests_module COMMAND xenon_tests_module)
-
-add_executable(xenon_tests_env
-    test_env.cpp)
-
-target_link_libraries(xenon_tests_env PRIVATE xenon::core)
-
-add_test(NAME xenon_tests_env COMMAND xenon_tests_env)
-
-add_executable(xenon_tests_lang
-    test_lang.cpp)
-
-target_link_libraries(xenon_tests_lang PRIVATE xenon::core)
-
-add_test(NAME xenon_tests_lang COMMAND xenon_tests_lang)
-
-add_executable(xenon_tests_hint
-    test_hint.cpp)
-
-target_link_libraries(xenon_tests_hint PRIVATE xenon::core)
-
-add_test(NAME xenon_tests_hint COMMAND xenon_tests_hint)
+    add_test(NAME xenon_tests_${component} COMMAND xenon_tests_${component})
+endforeach()

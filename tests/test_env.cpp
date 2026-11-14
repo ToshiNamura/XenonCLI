@@ -1,12 +1,13 @@
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <variant>
 
-#include <xenon/bytecode/opcode.hpp>
-#include <xenon/bytecode/xenon_binary.hpp>
-#include <xenon/module/module.hpp>
+#include <xenon/asm/binary.hpp>
+#include <xenon/asm/model.hpp>
+#include <xenon/asm/opcode.hpp>
 #include <xenon/runtime/error.hpp>
 #include <xenon/runtime/runtime.hpp>
 
@@ -21,6 +22,12 @@ void check(bool condition, const std::string& message)
 	}
 }
 
+void writeU16(xenon::XenonBinary& binary, std::size_t value)
+{
+	binary.write(static_cast<std::uint8_t>(value & 0xff), 1);
+	binary.write(static_cast<std::uint8_t>((value >> 8) & 0xff), 1);
+}
+
 void testObjects()
 {
 	xenon::Runtime runtime;
@@ -33,7 +40,7 @@ void testObjects()
 	check(runtime.className(point) == "Point", "wrong class name");
 
 	const xenon::Value fieldX = runtime.getField(point, "x");
-	const auto* x = std::get_if<double>(&fieldX);
+	const auto*         x      = std::get_if<double>(&fieldX);
 	check(x != nullptr && std::abs(*x - 1.5) < 1e-12, "getField('x') wrong");
 	check(runtime.heap().size() == 1, "heap size wrong");
 }
@@ -42,18 +49,18 @@ void testArraysAndStrings()
 {
 	xenon::Runtime runtime;
 
-	const auto arr = runtime.newArray(3);
-	runtime.setElement(arr, 0, 10.0);
-	runtime.setElement(arr, 2, 30.0);
+	const auto array = runtime.newArray(3);
+	runtime.setElement(array, 0, 10.0);
+	runtime.setElement(array, 2, 30.0);
 
-	check(runtime.arrayLength(arr) == 3, "array length wrong");
-	const xenon::Value elem0 = runtime.getElement(arr, 0);
-	const auto* first = std::get_if<double>(&elem0);
+	check(runtime.arrayLength(array) == 3, "array length wrong");
+	const xenon::Value element = runtime.getElement(array, 0);
+	const auto*        first   = std::get_if<double>(&element);
 	check(first != nullptr && std::abs(*first - 10.0) < 1e-12, "array[0] wrong");
 
-	const auto str = runtime.newString("hello");
-	check(runtime.objectKind(str) == xenon::ObjectKind::String, "string kind wrong");
-	check(runtime.stringValue(str) == "hello", "string value wrong");
+	const auto text = runtime.newString("hello");
+	check(runtime.objectKind(text) == xenon::ObjectKind::String, "string kind wrong");
+	check(runtime.stringValue(text) == "hello", "string value wrong");
 }
 
 void testStack()
@@ -66,7 +73,7 @@ void testStack()
 	check(runtime.stackSize() == 3, "stack size wrong");
 	check(std::get_if<double>(&runtime.peek()) != nullptr, "peek wrong type");
 
-	const auto top = runtime.pop();
+	const auto  top    = runtime.pop();
 	const auto* number = std::get_if<double>(&top);
 	check(number != nullptr && std::abs(*number - 3.0) < 1e-12, "pop wrong");
 	check(runtime.stackSize() == 2, "stack size after pop wrong");
@@ -84,28 +91,30 @@ void testTypePredicates()
 void testRunFunction()
 {
 	xenon::XenonBinary body;
-	const auto a = body.addConstant(2.0);
-	const auto b = body.addConstant(3.0);
-	body.write(xenon::OpCode::Constant, 1);
-	body.write(static_cast<std::uint8_t>(a), 1);
-	body.write(xenon::OpCode::Constant, 1);
-	body.write(static_cast<std::uint8_t>(b), 1);
-	body.write(xenon::OpCode::Add, 1);
-	body.write(xenon::OpCode::Return, 1);
+	body.write(xenon::Instruction::Ldl, 1);
+	writeU16(body, 0);
+	body.write(xenon::Instruction::Ldl, 1);
+	writeU16(body, 1);
+	body.write(xenon::Instruction::Add, 1);
+	body.write(xenon::Instruction::Ret, 1);
 
 	xenon::Module module;
 	module.Name = "Math";
-	xenon::Symbol add;
+
+	xenon::Function add;
 	add.Name      = "add";
-	add.Kind      = xenon::SymbolKind::Function;
 	add.Signature = "double add(double, double)";
+	add.Arity     = 2;
 	add.Body      = std::move(body);
-	module.Symbols.push_back(std::move(add));
+	module.Functions.push_back(std::move(add));
 
 	xenon::Runtime runtime;
 	runtime.addModule(module);
 
-	check(runtime.find("add") != nullptr, "runtime.find('add') failed");
+	check(runtime.findFunction("add") != nullptr, "runtime.findFunction('add') failed");
+	check(runtime.hasFunction("add"), "runtime.hasFunction('add') failed");
+	runtime.push(2.0);
+	runtime.push(3.0);
 	check(runtime.run("add") == xenon::InterpretResult::Ok, "runtime.run('add') failed");
 
 	const auto* number = std::get_if<double>(&runtime.lastValue());
@@ -115,12 +124,12 @@ void testRunFunction()
 void testBadFieldThrows()
 {
 	xenon::Runtime runtime;
-	const auto obj = runtime.newObject("X");
+	const auto    object = runtime.newObject("X");
 
 	bool threw = false;
 	try
 	{
-		(void)runtime.getField(obj, "missing");
+		(void)runtime.getField(object, "missing");
 	}
 	catch (const xenon::RuntimeError&)
 	{

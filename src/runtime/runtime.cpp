@@ -28,17 +28,45 @@ void xenon::Runtime::loadModuleFile(const std::string& path)
 	addModule(module);
 }
 
-const xenon::Symbol* xenon::Runtime::find(std::string_view name) const noexcept
+const xenon::Function* xenon::Runtime::findFunction(std::string_view name) const noexcept
 {
 	for (const auto& module : _modules)
 	{
-		const xenon::Symbol* symbol = module.find(name);
-		if (symbol != nullptr)
+		if (const xenon::Function* function = module.findFunction(name))
 		{
-			return symbol;
+			return function;
 		}
 	}
 	return nullptr;
+}
+
+const xenon::Method* xenon::Runtime::findMethod(std::string_view name) const noexcept
+{
+	for (const auto& module : _modules)
+	{
+		if (const xenon::Method* method = module.findMethod(name))
+		{
+			return method;
+		}
+	}
+	return nullptr;
+}
+
+const xenon::Type* xenon::Runtime::findType(std::string_view name) const noexcept
+{
+	for (const auto& module : _modules)
+	{
+		if (const xenon::Type* type = module.findType(name))
+		{
+			return type;
+		}
+	}
+	return nullptr;
+}
+
+bool xenon::Runtime::hasFunction(std::string_view name) const noexcept
+{
+	return _vm.hasFunction(name);
 }
 
 void xenon::Runtime::reloadModules()
@@ -231,26 +259,33 @@ int xenon::Runtime::valueToExitCode(const xenon::Value& value)
 
 int xenon::Runtime::runMain(std::string_view name, const std::vector<std::string>& arguments, const std::vector<std::string>& environment)
 {
-	const xenon::Symbol* symbol = find(name);
-	if (symbol == nullptr)
+	std::size_t arity = 0;
+	std::string signature;
+	if (const xenon::Function* function = findFunction(name))
+	{
+		arity     = function->Arity;
+		signature = function->Signature;
+	}
+	else if (const xenon::Method* method = findMethod(name))
+	{
+		arity     = method->Arity;
+		signature = method->Signature;
+	}
+	else
 	{
 		throw xenon::RuntimeError("unknown entry point: " + std::string(name));
 	}
-	if (symbol->Kind != xenon::SymbolKind::Function)
-	{
-		throw xenon::RuntimeError("entry point is not a function: " + std::string(name));
-	}
 
-	const bool vectorStyle = symbol->Signature.find("Vector") != std::string::npos;
+	const bool vectorStyle = signature.find("Vector") != std::string::npos;
 
 	if (vectorStyle)
 	{
 		// function(xenon::Vector<xenon::String> arguments[, environment])
-		if (symbol->Arity >= 1)
+		if (arity >= 1)
 		{
 			push(xenon::Value{newStringArray(arguments)});
 		}
-		if (symbol->Arity >= 2)
+		if (arity >= 2)
 		{
 			push(xenon::Value{newStringArray(environment)});
 		}
@@ -258,15 +293,15 @@ int xenon::Runtime::runMain(std::string_view name, const std::vector<std::string
 	else
 	{
 		// function(void) / function(int argc[, char* argv[] [, char* envp[]]])
-		if (symbol->Arity >= 1)
+		if (arity >= 1)
 		{
 			push(xenon::Value{static_cast<double>(arguments.size())});
 		}
-		if (symbol->Arity >= 2)
+		if (arity >= 2)
 		{
 			push(xenon::Value{newStringArray(arguments)});
 		}
-		if (symbol->Arity >= 3)
+		if (arity >= 3)
 		{
 			push(xenon::Value{newStringArray(environment)});
 		}

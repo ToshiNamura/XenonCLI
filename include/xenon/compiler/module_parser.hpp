@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-#include <xenon/compiler/module.hpp>
+#include <xenon/compiler/module_header.hpp>
 
 namespace xenon
 {

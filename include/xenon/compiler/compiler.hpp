@@ -7,13 +7,13 @@
 #include <string_view>
 #include <vector>
 
-#include <xenon/compiler/module.hpp>
-#include <xenon/module/module.hpp>
+#include <xenon/asm/model.hpp>
+#include <xenon/compiler/module_header.hpp>
 
 namespace xenon
 {
 	/// The Xenon front end: translates a C++-like source module into a compiled
-	/// `.module` artifact (packed symbols for the virtual machine).
+	/// `Module` (Xenon ASM declarations and code for the virtual machine).
 	///
 	/// Pipeline: source -> module header -> lexer -> parser -> code generator -> Module.
 	class Compiler

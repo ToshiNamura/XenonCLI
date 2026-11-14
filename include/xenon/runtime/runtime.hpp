@@ -8,8 +8,8 @@
 #include <string_view>
 #include <vector>
 
-#include <xenon/bytecode/xenon_binary.hpp>
-#include <xenon/module/module.hpp>
+#include <xenon/asm/binary.hpp>
+#include <xenon/asm/model.hpp>
 #include <xenon/runtime/virtual_heap.hpp>
 #include <xenon/runtime/virtual_machine.hpp>
 #include <xenon/runtime/virtual_stack.hpp>
@@ -44,7 +44,17 @@ namespace xenon
 			return _modules;
 		}
 
-		[[nodiscard]] const Symbol* find(std::string_view name) const noexcept;
+		/// Returns the top-level function named `name` from the loaded modules, or `nullptr`.
+		[[nodiscard]] const Function* findFunction(std::string_view name) const noexcept;
+
+		/// Returns the method `Type::name` from the loaded modules, or `nullptr`.
+		[[nodiscard]] const Method* findMethod(std::string_view name) const noexcept;
+
+		/// Returns the type named `name` from the loaded modules, or `nullptr`.
+		[[nodiscard]] const Type* findType(std::string_view name) const noexcept;
+
+		/// True when a function or method named `name` is loaded.
+		[[nodiscard]] bool hasFunction(std::string_view name) const noexcept;
 
 		// ---- heap / objects ----
 		Ref newObject(std::string_view className);
@@ -136,7 +146,7 @@ namespace xenon
 
 	private:
 		Ref newStringArray(const std::vector<std::string>& values);
-		
+
 		static int valueToExitCode(const Value& value);
 
 		void reloadModules();

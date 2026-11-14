@@ -3,7 +3,7 @@
 #ifndef XENON__ENV_MODULE_HPP
 #define XENON__ENV_MODULE_HPP 1
 
-#include <xenon/module/module.hpp>
+#include <xenon/asm/model.hpp>
 
 namespace xenon
 {

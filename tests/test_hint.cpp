@@ -6,8 +6,8 @@
 #include <variant>
 #include <vector>
 
+#include <xenon/asm/model.hpp>
 #include <xenon/compiler/compiler.hpp>
-#include <xenon/module/module.hpp>
 #include <xenon/runtime/error.hpp>
 #include <xenon/runtime/runtime.hpp>
 
@@ -31,19 +31,20 @@ struct Point { double x; double y; };
 enum Color { Red, Green, Blue };
 )";
 
-	xenon::Module module;
+	xenon::Module   module;
 	xenon::Compiler compiler;
 	check(compiler.compileHints(hint, module), "compileHints failed");
-	check(module.Symbols.size() == 4, "expected 4 hint symbols");
+	check(module.Functions.size() == 2, "expected 2 hint functions");
+	check(module.Types.size() == 2, "expected 2 hint types");
 
-	const xenon::Symbol* sqrtSym = module.find("sqrt");
-	check(sqrtSym != nullptr && sqrtSym->Kind == xenon::SymbolKind::Function && !sqrtSym->Defined,
-		  "sqrt should be an undefined function");
-	check(sqrtSym != nullptr && sqrtSym->Arity == 1, "sqrt arity should be 1");
+	const xenon::Function* sqrtFunction = module.findFunction("sqrt");
+	check(sqrtFunction != nullptr && !sqrtFunction->Defined, "sqrt should be an undefined function");
+	check(sqrtFunction != nullptr && sqrtFunction->Arity == 1, "sqrt arity should be 1");
 
-	const xenon::Symbol* point = module.find("Point");
-	check(point != nullptr && point->Kind == xenon::SymbolKind::Struct && !point->Defined,
+	const xenon::Type* point = module.findType("Point");
+	check(point != nullptr && point->Kind == xenon::TypeKind::Struct && !point->Defined,
 		  "Point should be an undefined struct");
+	check(point != nullptr && point->Fields.size() == 2, "Point should have two fields");
 }
 
 void testHintResolution()
@@ -59,13 +60,14 @@ double main()
 }
 )";
 
-	xenon::Module hintsModule;
+	xenon::Module   hintsModule;
 	xenon::Compiler hintCompiler;
 	check(hintCompiler.compileHints(hint, hintsModule), "compileHints failed");
 
-	xenon::Module module;
+	xenon::Module   module;
 	xenon::Compiler compiler;
 	check(compiler.compile(source, module, {hintsModule}), "compile with hints failed");
+	check(module.findFunction("sqrt") != nullptr, "hint declaration was not merged into the module");
 
 	xenon::Runtime runtime;
 	runtime.addModule(module);
@@ -82,17 +84,17 @@ double main()
 
 void testUnboundExternalThrows()
 {
-	const std::string hint = "double missing(double x);\n";
+	const std::string hint   = "double missing(double x);\n";
 	const std::string source = R"(
 export module UseMissing;
 double main() { return missing(1.0); }
 )";
 
-	xenon::Module hintsModule;
+	xenon::Module   hintsModule;
 	xenon::Compiler hintCompiler;
 	check(hintCompiler.compileHints(hint, hintsModule), "compileHints failed");
 
-	xenon::Module module;
+	xenon::Module   module;
 	xenon::Compiler compiler;
 	check(compiler.compile(source, module, {hintsModule}), "compile failed");
 

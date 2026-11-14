@@ -365,5 +365,10 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
-# XenonCLI: compiled module artifacts
+# XenonCLI: compiled artifacts and local tooling state
 *.module
+*.xenon
+CMakeUserPresets.json
+compile_commands.json
+.cache/
+.clangd/

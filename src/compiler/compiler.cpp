@@ -36,8 +36,10 @@ bool xenon::Compiler::compile(std::string_view source, xenon::Module& out, const
 	xenon::Module mergedHints;
 	for (const auto& hint : hints)
 	{
-		mergedHints.Symbols.insert(mergedHints.Symbols.end(), hint.Symbols.begin(),
-								   hint.Symbols.end());
+		mergedHints.Functions.insert(mergedHints.Functions.end(), hint.Functions.begin(),
+									 hint.Functions.end());
+		mergedHints.Types.insert(mergedHints.Types.end(), hint.Types.begin(), hint.Types.end());
+		mergedHints.Globals.insert(mergedHints.Globals.end(), hint.Globals.begin(), hint.Globals.end());
 	}
 
 	xenon::CodeGenerator codegen(program, mergedHints);

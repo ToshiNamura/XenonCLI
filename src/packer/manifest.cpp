@@ -73,7 +73,7 @@ xenon::Manifest xenon::Manifest::fromModule(const xenon::Module& module)
 {
 	xenon::Manifest manifest;
 	manifest.MainModule = module.Name;
-	if (module.find("main") != nullptr)
+	if (module.findFunction("main") != nullptr)
 	{
 		manifest.MainFunction = "main";
 	}

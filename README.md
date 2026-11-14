@@ -10,19 +10,40 @@ C++-подобный язык (модули `.ixx`) в собственный б
 ```mermaid
 flowchart LR
     SRC["исходник .ixx"] --> COMP["Compiler<br/>(заголовок → лексер → парсер → кодоген)"]
+    ASM["Xenon ASM .asm"] --> ASMB["Assembler"]
     COMP --> MOD["Module (.module)"]
+    ASMB --> MOD
     MOD --> VM["VirtualMachine<br/>(Runtime + VirtualStack + VirtualHeap)"]
+    MOD --> DIS["Disassembler (.asm)"]
     MOD --> PACK["Packer (.xenon, ZIP + манифест)"]
     PACK --> VM
 ```
+
+## Ключевая идея: единое представление Xenon ASM
+
+Всё, что компилятор создаёт и что исполняет VM, описывается **одной моделью**
+(`xenon/asm/model.hpp`):
+
+- исполняемый код — функции и методы с телами `XenonBinary`;
+- данные — классы, структуры, перечисления, поля и глобальные переменные;
+- метаданные — атрибуты, шаблонные параметры, наследование и модификаторы
+  доступа.
+
+Текстовый Xenon ASM (`.asm`) и бинарный формат `.module` — два представления
+этой модели. Ассемблер и дизассемблер замыкают цикл, поэтому один и тот же
+артефакт можно прочитать, отредактировать и собрать заново.
 
 ## Подпроекты
 
 | Подпроект | Цель сборки | Назначение |
 | --- | --- | --- |
-| `xenon.core` | `xenon_core` | базовые классы, структуры, перечисления, определения препроцессора: байт-код (`XenonBinary`, `OpCode`), значения, `Module`/`Symbol`, формат `.module`, фронт-энд компилятора, исполнитель (`Runtime`, `VirtualMachine`, `VirtualStack`, `VirtualHeap`) |
+| `xenon.core` | `xenon_core` | Xenon ASM (`Instruction`, `Module`, `XenonBinary`), лексер/парсер/кодоген, формат `.module`, исполнитель (`Runtime`, `VirtualMachine`, `VirtualStack`, `VirtualHeap`) |
 | `xenon.env` | `xenon_env` | среда классов Xenon: `Object`, `String`, `Vector<Type>`, `Environment` и встроенный модуль `xenon.env` |
-| `xenon` | `xenon` | исполняемая программа: компилирует, упаковывает и выполняет байт-код (компоненты `compiler`, `executor`, `packer`) |
+| `xenon.packer` | `xenon_packer` | упаковщик `.module`/`.hint` в `.xenon` (ZIP + `META-INF/MANIFEST.MF`) |
+| `xenon` | `xenon` | CLI: `compile`, `asm`, `disasm`, `run`, `pack` |
+
+Зависимости: `xenon.env` → `xenon.core`, `xenon.packer` → `xenon.core`,
+`xenon` → все три библиотеки.
 
 ## Скрипты: модули `.ixx`
 
@@ -56,13 +77,35 @@ double main()
 | `#include ...` | текстовый инклуд (содержимое вставляется на место директивы) |
 | `export` | помечает символы/объявления, видимые за пределами модуля |
 
-Файл `.module` содержит **символы**: функции, классы, структуры, перечисления,
-шаблоны и глобальные переменные.
+Скомпилированный модуль содержит функции, методы, типы, перечисления,
+шаблоны и глобальные переменные. Импорты разрешаются на этапе выполнения:
+инструкции `call`, `new`, `ldg`/`stg` ссылаются на **имена**, а VM связывает
+их с загруженными модулями и нативными функциями.
 
-## Артефакт: файлы `.module`
+## Xenon ASM
 
-Скомпилированный модуль сохраняется в бинарный файл `.module` (разметка в духе
-COFF/PE). Внутри — упакованные символы, которые экспортирует модуль.
+```asm
+.meta
+    .module Demo
+.end
+
+.text
+    .function export double main()
+        const 3.5
+        const 2.0
+        mul
+        ret
+    .end
+.end
+```
+
+```sh
+xenon asm demo.asm -o demo.module
+xenon disasm demo.module
+```
+
+Полное описание синтаксиса, директив и инструкций — в
+[docs/xenon-asm.md](docs/xenon-asm.md).
 
 ## Среда выполнения (исполнитель)
 
@@ -88,36 +131,8 @@ int code = runtime.runMain("main", {"a", "b"}, {}); // запуск точки �
 | `Runtime` | исполнитель: массив модулей, API объектов/полей/стек, запуск |
 | `VirtualStack` | стек операндов виртуальной машины |
 | `VirtualHeap` | управляемая куча: объекты, массивы, строки |
-| `VirtualMachine` | исполняет бинарный код `XenonBinary` |
-| `XenonBinary` | бинарный код (опкоды + пул констант + номера строк) |
-
-Модули можно загрузить из файла `.module` или создать вручную. Содержимое
-символов (поля классов и т. д.) можно менять во время выполнения.
-
-## Библиотека среды `xenon.env`
-
-`xenon.env` задаёт основу Xenon API — классы, наследуемые от `Object`:
-
-| Класс | Назначение |
-| --- | --- |
-| `Object` | базовый класс с виртуальными методами `getType`, `getHash`, `toString` |
-| `String` | строка |
-| `Vector<Type>` | динамический список |
-| `Environment` | хранит и управляет классами среды; сам наследуется от `Object` |
-
-Для библиотеки реализован встроенный модуль `environmentModule()`, который можно
-добавить в `Runtime`.
-
-## Упаковщик: файлы `.xenon`
-
-`Packer` упаковывает файлы `.module` и `.hint` в ZIP-архив с расширением
-`.xenon` (как Jar), создавая и настраивая манифест `META-INF/MANIFEST.MF`:
-
-```
-Manifest-Version: 1.0
-Main-Module: Example
-Main-Function: main
-```
+| `VirtualMachine` | исполняет `XenonBinary`, связывает имена функций/типов/глобалов |
+| `XenonBinary` | поток инструкций + пулы констант и строк |
 
 ## Командная строка
 
@@ -125,11 +140,13 @@ Main-Function: main
 xenon                                    версия и справка
 xenon help                               справка
 xenon version                            версия
-xenon compile <sources>... [module]      скомпилировать .ixx + .hint в .module
-xenon run <xenon> <arguments>...         запустить .xenon (точка входа из манифеста)
-xenon run <module> <function/method> <arguments>...
-                                         запустить функцию/метод из .module
-xenon pack <modules>... <xenon> [manifest]
+xenon compile <source.ixx> [hints...] [-o <module>]
+                                         скомпилировать .ixx + .hint в .module
+xenon asm <source.asm> [-o <module>]     собрать текстовый Xenon ASM
+xenon disasm <module> [-o <listing.asm>] дизассемблировать .module
+xenon run <package.xenon> [args...]      запустить .xenon (точка входа из манифеста)
+xenon run <module> [function] [args...]  запустить функцию/метод (по умолчанию main)
+xenon pack <modules...> <package.xenon> [manifest]
                                          упаковать модули в .xenon
 ```
 
@@ -155,35 +172,41 @@ int main(xenon::Vector<xenon::String> arguments, xenon::Vector<xenon::String> en
 - Функции, методы, локальные переменные — с маленькой буквы, слитно:
   `exampleSymvolName`.
 - Приватные поля — с подчёркивания: `_exampleSymvolName`.
+- Индентация — табуляция; см. [docs/style-guide.md](docs/style-guide.md).
 
 ## Сборка и запуск
 
 ```sh
-cmake --preset default
-cmake --build --preset default
-ctest --test-dir build/default --output-on-failure
+cmake --preset x64-debug        # Windows; linux-debug / macos-debug на других ОС
+cmake --build --preset x64-debug
+ctest --preset x64-debug
 
-./build/xenon compile examples/sqrt_demo.ixx examples/math.hint
-./build/xenon run examples/sqrt_demo.module main
+./out/build/x64-debug/xenon compile examples/sqrt_demo.ixx examples/math.hint
+./out/build/x64-debug/xenon run examples/sqrt_demo.module
 ```
 
-Подробнее — в [docs](docs/README.md).
+Подробнее — в [docs/building.md](docs/building.md).
 
 ## Структура
 
 ```
 XenonCLI/
 ├── CMakeLists.txt
-├── CMakePresets.json
+├── CMakePresets.json          # configure + build + test presets
+├── .clang-format / .clang-tidy / .editorconfig
+├── .github/
+│   ├── workflows/ci.yml       # MSVC / GCC / Clang
+│   └── skills/github-cli/     # работа с GitHub через gh
 ├── include/xenon/
-│   ├── core/       # определения препроцессора
-│   ├── bytecode/   # OpCode, XenonBinary, дизассемблер
-│   ├── compiler/   # лексер, парсер (AST), кодогенератор
-│   ├── env/        # Object, String, Vector, Environment
-│   ├── module/     # Symbol, Module, формат .module
-│   ├── packer/     # Packer, Manifest (.xenon)
-│   └── runtime/    # Runtime, VirtualMachine, VirtualStack, VirtualHeap, Value
-├── src/
-├── tests/          # юнит-тесты (CTest)
-└── examples/       # примеры .ixx и .hint
+│   ├── core/                  # определения препроцессора
+│   ├── asm/                   # Instruction, Module, XenonBinary, ассемблер, дизассемблер
+│   ├── compiler/              # заголовок модуля, лексер, парсер (AST), кодогенератор
+│   ├── module/                # формат .module
+│   ├── runtime/               # Runtime, VM, стек, куча, значения
+│   ├── env/                   # Object, String, Vector, Environment
+│   └── packer/                # Packer, Manifest (.xenon)
+├── src/                       # реализации (зеркально include/) + src/cli/main.cpp
+├── tests/                     # юнит-тесты (CTest)
+├── examples/                  # примеры .ixx, .hint и .asm
+└── docs/                      # документация
 ```
