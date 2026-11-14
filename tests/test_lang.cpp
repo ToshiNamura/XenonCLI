@@ -7,6 +7,7 @@
 
 #include <xenon/asm/model.hpp>
 #include <xenon/compiler/compiler.hpp>
+#include <xenon/runtime/error.hpp>
 #include <xenon/runtime/runtime.hpp>
 
 int g_failures = 0;
@@ -376,7 +377,7 @@ void testCrossModuleCall()
 	const std::string library = R"(
 export module Lib;
 
-double add(double a, double b)
+export double add(double a, double b)
 {
 	return a + b;
 }
@@ -933,6 +934,75 @@ double main()
 		  "an unqualified name shared by two enums should fail");
 }
 
+void testExportedVisibility()
+{
+	const std::string library = R"(
+export module Secret;
+
+double hidden(double a)
+{
+	return a;
+}
+
+export double visible(double a)
+{
+	return a;
+}
+)";
+
+	const auto libraryModule = compileOrFail(library, "visibility library");
+	check(!libraryModule.findFunction("hidden")->Exported, "hidden must not be exported");
+	check(libraryModule.findFunction("visible")->Exported, "visible must be exported");
+
+	const std::string hint = "double hidden(double a);\ndouble visible(double a);\n";
+
+	xenon::Module   hintsModule;
+	xenon::Compiler hintCompiler;
+	check(hintCompiler.compileHints(hint, hintsModule), "compileHints failed");
+
+	const auto caller = [](const std::string& callee)
+	{
+		return R"(
+export module Caller;
+double main()
+{
+	return )" + callee + R"((1.0);
+}
+)";
+	};
+
+	xenon::Module   hiddenModule;
+	xenon::Compiler hiddenCompiler;
+	check(hiddenCompiler.compile(caller("hidden"), hiddenModule, {hintsModule}),
+		  "compile hidden caller failed: " + hiddenCompiler.lastError());
+
+	xenon::Runtime hiddenRuntime;
+	hiddenRuntime.addModule(libraryModule);
+	hiddenRuntime.addModule(hiddenModule);
+	bool threw = false;
+	try
+	{
+		(void)hiddenRuntime.run("main");
+	}
+	catch (const xenon::RuntimeError&)
+	{
+		threw = true;
+	}
+	check(threw, "calling a non-exported function from another module should fail");
+
+	xenon::Module   visibleModule;
+	xenon::Compiler visibleCompiler;
+	check(visibleCompiler.compile(caller("visible"), visibleModule, {hintsModule}),
+		  "compile visible caller failed: " + visibleCompiler.lastError());
+
+	xenon::Runtime visibleRuntime;
+	visibleRuntime.addModule(libraryModule);
+	visibleRuntime.addModule(visibleModule);
+	check(visibleRuntime.run("main") == xenon::InterpretResult::Ok, "exported call failed");
+	const auto* number = std::get_if<double>(&visibleRuntime.lastValue());
+	check(number != nullptr && std::abs(*number - 1.0) < 1e-12, "exported call result wrong");
+}
+
 void testParseError()
 {
 	const std::string source = R"(
@@ -972,6 +1042,7 @@ int main()
 		testTypeChecking();
 		testConstChecking();
 		testEnumValues();
+		testExportedVisibility();
 		testParseError();
 	}
 	catch (const std::exception& error)
