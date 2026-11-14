@@ -84,15 +84,18 @@ namespace xenon
 		struct Executable
 		{
 			std::string        Name;
-			const XenonBinary* Body    = nullptr;
-			std::size_t        Arity   = 0;
-			std::size_t        Locals  = 0;
-			bool               Defined = true;
+			std::string        Module;    ///< Module that defines the executable.
+			const XenonBinary* Body      = nullptr;
+			std::size_t        Arity     = 0;
+			std::size_t        Locals    = 0;
+			bool               Defined   = true;
+			bool               Exported  = true;
 		};
 
 		struct Frame
 		{
 			const XenonBinary* binary = nullptr;
+			std::string        module; ///< Module of the running function.
 			std::size_t        ip = 0;
 			std::vector<Value> locals;
 		};
@@ -101,6 +104,10 @@ namespace xenon
 
 		const Executable* findExecutable(std::string_view name) const noexcept;
 
+		/// Throws unless the symbol may be used from `fromModule`.
+		static void checkVisible(const std::string& name, const std::string& module, bool exported,
+								 std::string_view fromModule);
+
 		void call(const Executable& executable, VirtualStack& stack);
 
 		void callExternal(const Executable& executable, VirtualStack& stack);
@@ -108,9 +115,17 @@ namespace xenon
 		void execute(VirtualStack& stack);
 
 		std::vector<Module>                              _modules;
+		struct SymbolInfo
+		{
+			std::string Module;
+			bool        Exported = true;
+		};
+
 		std::unordered_map<std::string, Executable>      _executables;
 		std::unordered_map<std::string, const Type*>     _types;
+		std::unordered_map<std::string, SymbolInfo>      _typeInfo;
 		std::unordered_map<std::string, Value>           _globals;
+		std::unordered_map<std::string, SymbolInfo>      _globalInfo;
 		std::unordered_map<std::string, NativeFunction>  _natives;
 		std::vector<Frame>                               _frames;
 		VirtualHeap*                                     _heap = nullptr;

@@ -104,22 +104,27 @@ namespace xenon
 	{
 		_executables.clear();
 		_types.clear();
+		_typeInfo.clear();
 		_globals.clear();
+		_globalInfo.clear();
 
-		const auto insertExecutable = [this](const std::string& name, const XenonBinary* body,
-											 std::size_t arity, std::size_t locals, bool defined)
+		const auto insertExecutable = [this](const std::string& moduleName, const std::string& name,
+											 const XenonBinary* body, std::size_t arity,
+											 std::size_t locals, bool defined, bool exported)
 		{
 			Executable executable;
-			executable.Name    = name;
-			executable.Body    = body;
-			executable.Arity   = arity;
-			executable.Locals  = locals;
-			executable.Defined = defined;
+			executable.Name     = name;
+			executable.Module   = moduleName;
+			executable.Body     = body;
+			executable.Arity    = arity;
+			executable.Locals   = locals;
+			executable.Defined  = defined;
+			executable.Exported = exported;
 
 			const auto [position, inserted] = _executables.emplace(name, std::move(executable));
 			if (!inserted && !position->second.Defined && defined)
 			{
-				position->second = Executable{name, body, arity, locals, defined};
+				position->second = Executable{name, moduleName, body, arity, locals, defined, exported};
 			}
 		};
 
@@ -127,7 +132,8 @@ namespace xenon
 		{
 			for (const auto& function : module.Functions)
 			{
-				insertExecutable(function.Name, &function.Body, function.Arity, function.Locals, function.Defined);
+				insertExecutable(module.Name, function.Name, &function.Body, function.Arity,
+								 function.Locals, function.Defined, function.Exported);
 			}
 
 			for (const auto& type : module.Types)
@@ -136,20 +142,39 @@ namespace xenon
 				if (!inserted && !position->second->Defined && type.Defined)
 				{
 					position->second = &type;
+					_typeInfo[type.Name] = SymbolInfo{module.Name, type.Exported};
+				}
+				else if (inserted)
+				{
+					_typeInfo[type.Name] = SymbolInfo{module.Name, type.Exported};
 				}
 
 				for (const auto& method : type.Methods)
 				{
-					insertExecutable(type.Name + "::" + method.Name, &method.Body, method.Arity,
-									 method.Locals, method.Defined);
+					insertExecutable(module.Name, type.Name + "::" + method.Name, &method.Body,
+									 method.Arity, method.Locals, method.Defined, method.Exported);
 				}
 			}
 
 			for (const auto& global : module.Globals)
 			{
-				_globals.emplace(global.Name, global.InitialValue);
+				const auto [position, inserted] = _globals.emplace(global.Name, global.InitialValue);
+				if (inserted)
+				{
+					_globalInfo[global.Name] = SymbolInfo{module.Name, global.Exported};
+				}
 			}
 		}
+	}
+
+	void xenon::VirtualMachine::checkVisible(const std::string& name, const std::string& module,
+											 bool exported, std::string_view fromModule)
+	{
+		if (fromModule.empty() || module == fromModule || exported)
+		{
+			return;
+		}
+		throw xenon::RuntimeError("'" + name + "' is not exported by module '" + module + "'");
 	}
 
 	const xenon::VirtualMachine::Executable* xenon::VirtualMachine::findExecutable(std::string_view name) const noexcept
@@ -220,6 +245,7 @@ namespace xenon
 	{
 		Frame frame;
 		frame.binary = executable.Body;
+		frame.module = executable.Module;
 		frame.ip     = 0;
 		frame.locals.resize(executable.Arity + executable.Locals);
 		for (std::size_t i = executable.Arity; i-- > 0;)
@@ -409,6 +435,11 @@ namespace xenon
 				{
 					throw xenon::RuntimeError("unknown type: " + typeName);
 				}
+				const auto info = _typeInfo.find(typeName);
+				if (info != _typeInfo.end())
+				{
+					checkVisible(typeName, info->second.Module, info->second.Exported, frame.module);
+				}
 				const xenon::Ref ref      = _heap->allocate(xenon::ObjectKind::Object, typeName);
 				xenon::HeapObject* object = _heap->get(ref);
 				for (const auto& field : type->Fields)
@@ -476,6 +507,11 @@ namespace xenon
 				{
 					throw xenon::RuntimeError("unknown global: " + name);
 				}
+				const auto info = _globalInfo.find(name);
+				if (info != _globalInfo.end())
+				{
+					checkVisible(name, info->second.Module, info->second.Exported, frame.module);
+				}
 				push(position->second);
 				break;
 			}
@@ -487,6 +523,11 @@ namespace xenon
 				if (position == _globals.end())
 				{
 					throw xenon::RuntimeError("unknown global: " + name);
+				}
+				const auto info = _globalInfo.find(name);
+				if (info != _globalInfo.end())
+				{
+					checkVisible(name, info->second.Module, info->second.Exported, frame.module);
 				}
 				const xenon::Value value = pop();
 				position->second         = value;
@@ -705,6 +746,7 @@ namespace xenon
 				{
 					throw xenon::RuntimeError("unknown function: " + name);
 				}
+				checkVisible(executable->Name, executable->Module, executable->Exported, frame.module);
 				if (!executable->Defined)
 				{
 					callExternal(*executable, stack);
